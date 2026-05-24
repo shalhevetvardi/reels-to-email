@@ -1,0 +1,84 @@
+# Your Profile — reels-to-email
+
+> **This file is YOUR personal configuration.**
+>
+> The AI reads it to know:
+> 1. What language to write in
+> 2. How to write (tone, length, style)
+> 3. Which topics matter to you (for "relevant to teach" tagging)
+>
+> Edit anything below. Save. The next reel you send will use the new profile.
+>
+> **Setup:** Copy this file to `config/profile.md` and edit it. Your real `profile.md` is git-ignored — only this `.example` is committed.
+
+---
+
+## Language
+
+```
+he
+```
+
+Set to `he` for Hebrew, `en` for English, or any other natural language name in English (e.g. `Spanish`, `Portuguese`).
+
+---
+
+## About You
+
+Replace this block with 1-3 sentences describing yourself and what you do.
+
+> Example: "I am a UX designer focused on AI-powered tools. I teach intro courses about design systems and like to share practical workflows with my audience."
+
+---
+
+## Explanation Style
+
+How you want the AI to write the "explanation" part of the email.
+
+- **Length:** 200-500 words (adjust to taste)
+- **Tone:** Direct, no fluff — get to the point
+- **Avoid:** Generic AI-speak like "in today's fast-paced world..."
+- **Include:** Concrete examples, names of tools/people mentioned, exact steps if shown
+- **Structure preference:** Plain paragraphs OR numbered steps OR bullets — your choice
+
+---
+
+## Relevance Topics
+
+The AI tags each reel as **"relevant to teach"** or **"not relevant"** based on this section.
+List what counts as "your area" — what you'd want to learn, share, or teach.
+
+### Relevant to me
+
+Replace these with your actual topics. Be specific.
+
+- (Your topic 1 — e.g. "AI agents and automation pipelines")
+- (Your topic 2 — e.g. "Design systems and component libraries")
+- (Your topic 3 — e.g. "Indie hacker / solopreneur tactics")
+- ... add as many as you want
+
+### Not relevant
+
+What should NOT be tagged as relevant.
+
+- (e.g. "Pure motivational content")
+- (e.g. "AI news without practical application")
+- (e.g. "Topics outside my niche")
+
+---
+
+## Tagging Rule (when in doubt)
+
+**Default: tag as relevant.** You'll decide for yourself when reading the email.
+
+(You can change this — e.g. "When in doubt: not relevant" if you prefer fewer false positives.)
+
+---
+
+## Research Focus (optional)
+
+Anything specific you want the web-research step to look for?
+
+- (Example: "Always check if there's an open-source alternative")
+- (Example: "Look for academic references when claims are scientific")
+- (Leave blank if nothing specific)

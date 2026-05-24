@@ -1,0 +1,42 @@
+# --- Secrets — NEVER commit ---
+.env
+.env.local
+.env.*.local
+
+# --- Personal profile — each user has their own ---
+config/profile.md
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Data — downloaded videos, transcripts, temp files ---
+data/
+
+# --- Planning artifacts (project-specific) ---
+planning/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
