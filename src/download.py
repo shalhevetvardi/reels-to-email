@@ -1,8 +1,17 @@
 """
 Download a video from Instagram (or any yt-dlp-supported URL).
-Returns the path to the downloaded video file.
+Returns the path to the downloaded audio file.
+
+Cookies handling:
+  - Locally, yt-dlp can pull cookies straight from your browser (no setup).
+  - On a server (Railway / Render / etc.) there's no browser session, so
+    Instagram blocks anonymous requests. We support two ways to provide cookies:
+    1. Env var INSTAGRAM_COOKIES — paste the contents of a cookies.txt file
+       (Netscape format). We'll write it to a temp file at startup.
+    2. A cookies.txt file at the project root (git-ignored).
 """
 import logging
+import os
 from pathlib import Path
 
 import yt_dlp
@@ -12,6 +21,20 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
+
+COOKIES_FILE = PROJECT_ROOT / "cookies.txt"
+
+
+def _resolve_cookies_path() -> Path | None:
+    """Locate a cookies.txt file. Writes one from env var if present."""
+    env_cookies = os.getenv("INSTAGRAM_COOKIES", "").strip()
+    if env_cookies:
+        COOKIES_FILE.write_text(env_cookies, encoding="utf-8")
+        logger.info("Wrote cookies from INSTAGRAM_COOKIES env var.")
+        return COOKIES_FILE
+    if COOKIES_FILE.exists():
+        return COOKIES_FILE
+    return None
 
 
 def download_video(url: str) -> Path:
@@ -42,6 +65,17 @@ def download_video(url: str) -> Path:
             }
         ],
     }
+
+    cookies_path = _resolve_cookies_path()
+    if cookies_path is not None:
+        ydl_opts["cookiefile"] = str(cookies_path)
+        logger.info(f"Using cookies from: {cookies_path.name}")
+    else:
+        logger.warning(
+            "No Instagram cookies available. Anonymous requests are often "
+            "blocked by Instagram. If download fails, set the INSTAGRAM_COOKIES "
+            "env var with the contents of a cookies.txt export."
+        )
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)

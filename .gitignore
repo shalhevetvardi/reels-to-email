@@ -6,6 +6,9 @@
 # --- Personal profile — each user has their own ---
 config/profile.md
 
+# --- Instagram cookies — sensitive, never commit ---
+cookies.txt
+
 # --- Python ---
 __pycache__/
 *.py[cod]
