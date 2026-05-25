@@ -1,0 +1,32 @@
+# Don't copy secrets or local state into the container
+.env
+.env.local
+.env.*.local
+
+# Personal profile is per-environment — provided via env vars / volume on the server
+# (locally it's read from config/profile.md — see profile_loader.py)
+# We DO copy profile.md.example so the project is self-describing in the container
+
+# Python local artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Local data (downloaded audio)
+data/
+
+# Project planning notes (local only)
+planning/
+
+# Git
+.git/
+.gitignore
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+*.log

@@ -1,12 +1,15 @@
 """
-Profile loader — reads the user's personal configuration from config/profile.md.
+Profile loader — reads the user's personal configuration.
 
-Why this file exists:
-- The pipeline code itself is generic.
-- What's personal (language, voice, relevance criteria) lives in config/profile.md.
-- config/profile.md is git-ignored — each user maintains their own.
-- A template config/profile.md.example is committed for new users.
+Load order:
+  1. Environment variable PROFILE_CONTENT (used on cloud platforms like Railway)
+  2. Local file config/profile.md (used during local development)
+  3. Error with clear instructions
+
+This dual-source approach lets the same code run identically on a developer's
+laptop (file-based) and on a deployed server (env-var-based), with no code change.
 """
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -15,23 +18,34 @@ PROFILE_EXAMPLE_PATH = PROJECT_ROOT / "config" / "profile.md.example"
 
 
 def load_profile() -> str:
-    """Return the full text of config/profile.md.
+    """Return the user's profile text. Tries env var first, then local file."""
+    # 1. Environment variable (used on cloud deployments)
+    env_content = os.getenv("PROFILE_CONTENT", "").strip()
+    if env_content:
+        return env_content
 
-    Raises a clear, actionable error if the file isn't set up yet.
-    """
-    if not PROFILE_PATH.exists():
-        raise RuntimeError(
-            f"\n\n"
-            f"❌ Profile file not found at: {PROFILE_PATH}\n\n"
-            f"To set up:\n"
-            f"  1. cp config/profile.md.example config/profile.md\n"
-            f"  2. Edit config/profile.md — fill in your language, topics, and style.\n"
-            f"  3. Re-run the bot.\n"
-        )
-    text = PROFILE_PATH.read_text(encoding="utf-8").strip()
-    if not text:
-        raise RuntimeError(f"Profile file at {PROFILE_PATH} is empty.")
-    return text
+    # 2. Local file (used during local development)
+    if PROFILE_PATH.exists():
+        text = PROFILE_PATH.read_text(encoding="utf-8").strip()
+        if text:
+            return text
+
+    # 3. Neither available — fail clearly
+    raise RuntimeError(
+        "\n\n"
+        "❌ No profile found.\n\n"
+        "You need to set up your personal profile so the AI knows your\n"
+        "language, topics, and style.\n\n"
+        "Choose one of:\n\n"
+        "  LOCAL DEVELOPMENT:\n"
+        "    1. cp config/profile.md.example config/profile.md\n"
+        "    2. Edit config/profile.md to describe yourself.\n\n"
+        "  CLOUD DEPLOYMENT (Railway / Render / Fly / etc.):\n"
+        "    1. Open config/profile.md.example as a starting point.\n"
+        "    2. In your platform's dashboard, add an environment variable:\n"
+        "         Name:  PROFILE_CONTENT\n"
+        "         Value: (the full contents of your filled-in profile.md)\n\n"
+    )
 
 
 if __name__ == "__main__":
