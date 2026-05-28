@@ -49,13 +49,13 @@ async def run_pipeline(
         transcript = transcribe_video(audio_path)
 
         await _notify(status_callback, t("explaining", language))
-        explanation = explain_content(transcript)
+        explanation = explain_content(transcript, language=language)
 
         await _notify(status_callback, t("researching", language))
-        research = research_topic(explanation)
+        research = research_topic(explanation, language=language)
 
         await _notify(status_callback, t("tagging", language))
-        tag = tag_relevance(explanation)
+        tag = tag_relevance(explanation, language=language)
 
         await _notify(status_callback, t("sending_email", language))
         email_id = send_email(

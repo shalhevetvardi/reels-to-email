@@ -8,7 +8,16 @@ import re
 
 from anthropic import Anthropic
 
-from profile_loader import load_profile
+from profile_loader import load_language, load_profile
+
+_LANGUAGE_NAMES = {
+    "he": "Hebrew (עברית)",
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "ar": "Arabic",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +43,12 @@ def _parse_json_loose(raw: str) -> dict:
     return json.loads(raw)
 
 
-def tag_relevance(explanation: str) -> dict:
+def tag_relevance(explanation: str, language: str | None = None) -> dict:
     """Tag content. Returns {'relevant': bool, 'reason': str}."""
     profile = load_profile()
+    if language is None:
+        language = load_language()
+    lang_name = _LANGUAGE_NAMES.get(language, language)
 
     system_prompt = (
         "You are a content classifier. You will receive an explanation of "
@@ -45,8 +57,9 @@ def tag_relevance(explanation: str) -> dict:
         "--- BEGIN USER PROFILE ---\n"
         f"{profile}\n"
         "--- END USER PROFILE ---\n\n"
+        f"⚠️ The 'reason' field MUST be written in {lang_name}. Not English unless that's the user's language.\n\n"
         "Return JSON only, no other text, in this exact shape:\n"
-        '{"relevant": true|false, "reason": "one sentence explaining why, in the user\'s language"}'
+        f'{{"relevant": true|false, "reason": "one sentence in {lang_name} explaining why"}}'
     )
 
     logger.info("Tagging relevance...")

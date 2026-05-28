@@ -133,7 +133,7 @@ def _get_system_prompt(language: str, profile: str) -> str:
     )
 
 
-def research_topic(content_explanation: str) -> str:
+def research_topic(content_explanation: str, language: str | None = None) -> str:
     """Research the topic from the content explanation. Returns markdown text."""
     logger.info("Researching topic via Perplexity (sonar-pro)...")
     api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -141,7 +141,8 @@ def research_topic(content_explanation: str) -> str:
         raise RuntimeError("PERPLEXITY_API_KEY missing from .env")
 
     profile = load_profile()
-    language = load_language()
+    if language is None:
+        language = load_language()
     system_prompt = _get_system_prompt(language, profile)
 
     user_intro = {
