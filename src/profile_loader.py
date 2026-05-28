@@ -10,6 +10,7 @@ This dual-source approach lets the same code run identically on a developer's
 laptop (file-based) and on a deployed server (env-var-based), with no code change.
 """
 import os
+import re
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -48,5 +49,30 @@ def load_profile() -> str:
     )
 
 
+_LANGUAGE_PATTERN = re.compile(
+    r"##\s*Language\s*\n+\s*(?:```[a-z]*\s*\n*)?([a-z]{2,5})",
+    re.IGNORECASE,
+)
+
+
+def load_language(default: str = "en") -> str:
+    """Extract the language code from the profile's `## Language` section.
+
+    Returns a 2-5 letter code (lowercase). Falls back to `default` if the
+    section is missing or unparseable.
+    """
+    try:
+        profile = load_profile()
+    except RuntimeError:
+        return default
+
+    match = _LANGUAGE_PATTERN.search(profile)
+    if match:
+        return match.group(1).strip().lower()
+    return default
+
+
 if __name__ == "__main__":
+    print("Language:", load_language())
+    print("---")
     print(load_profile())

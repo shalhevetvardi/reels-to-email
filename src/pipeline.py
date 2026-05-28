@@ -15,6 +15,7 @@ from typing import Awaitable, Callable, Optional
 from download import download_video
 from email_sender import send_email
 from explain import explain_content
+from messages import t
 from research import research_topic
 from tag import tag_relevance
 from transcribe import transcribe_video
@@ -33,26 +34,30 @@ async def _notify(callback: StatusCallback, msg: str) -> None:
             logger.warning(f"Status callback failed: {e}")
 
 
-async def run_pipeline(instagram_url: str, status_callback: StatusCallback = None) -> dict:
+async def run_pipeline(
+    instagram_url: str,
+    status_callback: StatusCallback = None,
+    language: str = "en",
+) -> dict:
     """Run the full pipeline. Returns a dict with success/error info."""
     audio_path = None
     try:
-        await _notify(status_callback, "⏬ Downloading audio...")
+        await _notify(status_callback, t("downloading", language))
         audio_path = download_video(instagram_url)
 
-        await _notify(status_callback, "🗣️ Transcribing...")
+        await _notify(status_callback, t("transcribing", language))
         transcript = transcribe_video(audio_path)
 
-        await _notify(status_callback, "📝 Writing full explanation...")
+        await _notify(status_callback, t("explaining", language))
         explanation = explain_content(transcript)
 
-        await _notify(status_callback, "🔎 Researching online...")
+        await _notify(status_callback, t("researching", language))
         research = research_topic(explanation)
 
-        await _notify(status_callback, "🏷️ Tagging relevance...")
+        await _notify(status_callback, t("tagging", language))
         tag = tag_relevance(explanation)
 
-        await _notify(status_callback, "📨 Sending email...")
+        await _notify(status_callback, t("sending_email", language))
         email_id = send_email(
             instagram_url=instagram_url,
             explanation=explanation,
@@ -61,10 +66,10 @@ async def run_pipeline(instagram_url: str, status_callback: StatusCallback = Non
             reason=tag["reason"],
         )
 
-        relevance_label = "relevant" if tag["relevant"] else "not relevant"
+        relevance_label = t("relevant" if tag["relevant"] else "not_relevant", language)
         await _notify(
             status_callback,
-            f"✅ Done! Email sent. (Tagged: {relevance_label})",
+            t("done", language, relevance=relevance_label),
         )
 
         return {
@@ -78,7 +83,12 @@ async def run_pipeline(instagram_url: str, status_callback: StatusCallback = Non
         logger.exception("Pipeline failed")
         await _notify(
             status_callback,
-            f"❌ Failed at this step: {type(e).__name__}\n{str(e)[:200]}",
+            t(
+                "failed_step",
+                language,
+                error_type=type(e).__name__,
+                error_message=str(e)[:200],
+            ),
         )
         return {"success": False, "error": f"{type(e).__name__}: {e}"}
 
