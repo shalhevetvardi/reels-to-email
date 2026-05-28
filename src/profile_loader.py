@@ -56,11 +56,17 @@ _LANGUAGE_PATTERN = re.compile(
 
 
 def load_language(default: str = "en") -> str:
-    """Extract the language code from the profile's `## Language` section.
+    """Return the user's language code.
 
-    Returns a 2-5 letter code (lowercase). Falls back to `default` if the
-    section is missing or unparseable.
+    Resolution order:
+      1. INTERFACE_LANGUAGE env var (highest priority — easy cloud override)
+      2. `## Language` section inside the profile
+      3. `default` argument
     """
+    env_lang = os.getenv("INTERFACE_LANGUAGE", "").strip().lower()
+    if env_lang:
+        return env_lang
+
     try:
         profile = load_profile()
     except RuntimeError:
