@@ -117,10 +117,13 @@ def send_email(
         f"{badge_text}</span>"
     )
 
-    subject_prefix = "✓" if relevant else "⏭"
-    snippet = explanation.replace("\n", " ").strip()[:80]
-    if len(explanation) > 80:
+    # The "[Reels]" tag is the stable string Gmail filters can match on,
+    # so all messages from this pipeline land in one label automatically.
+    relevance_mark = "✓" if relevant else "⏭"
+    snippet = explanation.replace("\n", " ").strip()[:70]
+    if len(explanation) > 70:
         snippet += "..."
+    subject_line = f"[Reels] {relevance_mark} {snippet}"
 
     html = f"""<!DOCTYPE html>
 <html dir="auto">
@@ -169,7 +172,7 @@ def send_email(
         {
             "from": f"Reels Pipeline <{from_email}>",
             "to": [target_email],
-            "subject": f"{subject_prefix} {snippet}",
+            "subject": subject_line,
             "html": html,
         }
     )
