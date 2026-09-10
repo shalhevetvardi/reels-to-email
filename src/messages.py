@@ -37,6 +37,8 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "relevant": "relevant",
         "not_relevant": "not relevant",
         "email_arrived": "📬 Email sent — check your inbox (also spam, the first time).",
+        "rate_limited": "🚦 Too many requests right now — please try again a bit later.",
+        "failed_generic": "⚠️ Something went wrong while processing. It has been logged — please try again later.",
         "failed_step": "❌ Failed at this step: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ Processing failed.\n{error}\n\n"
@@ -71,6 +73,8 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "relevant": "רלוונטי",
         "not_relevant": "לא רלוונטי",
         "email_arrived": "📬 המייל בדרך אליך — בדקי את התיבה (כולל ספאם בפעם הראשונה).",
+        "rate_limited": "🚦 יותר מדי בקשות כרגע — נסי שוב עוד קצת.",
+        "failed_generic": "⚠️ משהו השתבש בעיבוד. זה נרשם בלוג — נסי שוב מאוחר יותר.",
         "failed_step": "❌ משהו נכשל בשלב הזה: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ העיבוד נכשל.\n{error}\n\n"

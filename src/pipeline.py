@@ -81,15 +81,9 @@ async def run_pipeline(
 
     except Exception as e:
         logger.exception("Pipeline failed")
-        await _notify(
-            status_callback,
-            t(
-                "failed_step",
-                language,
-                error_type=type(e).__name__,
-                error_message=str(e)[:200],
-            ),
-        )
+        # Generic message to the user; full detail is already in logger.exception
+        # above (do not echo exception text back to the sender).
+        await _notify(status_callback, t("failed_generic", language))
         return {"success": False, "error": f"{type(e).__name__}: {e}"}
 
     finally:

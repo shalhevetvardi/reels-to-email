@@ -115,6 +115,9 @@ cp .env.example .env
 
 Then open `.env` in any editor and paste your keys + your target email address.
 
+> **Required:** set `ALLOWED_CHAT_IDS` to your own Telegram chat id (get it from `@userinfobot`).
+> The bot is fail-closed - until this is set it ignores every message, including yours.
+
 ### Step 5 — Configure your profile
 
 ```bash
@@ -211,6 +214,7 @@ At 30 Reels per month: **~$0.40/month**.
 | `Profile file not found` | `config/profile.md` not created | `cp config/profile.md.example config/profile.md` |
 | Email cut off | Explanation longer than `max_tokens` | Raise `max_tokens` in `src/explain.py` |
 | Bot doesn't respond | Token wrong, or `/start` not pressed | Re-check `.env`, click the bot link, press Start |
+| Bot silent to everyone (incl. you) | `ALLOWED_CHAT_IDS` not set (fail-closed) | Add your Telegram chat id to `ALLOWED_CHAT_IDS` in `.env` / Railway, then redeploy |
 
 ---
 

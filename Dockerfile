@@ -18,6 +18,12 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copy the rest of the project
 COPY . .
 
+# Least privilege: run as a non-root user. It only needs to read /app and
+# write temporary audio (removed after each run).
+RUN useradd --create-home --uid 10001 appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 # The bot runs as a long-lived process and doesn't expose a port —
 # it talks to Telegram via long-polling (outbound only).
 CMD ["python", "src/main.py"]

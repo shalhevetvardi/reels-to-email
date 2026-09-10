@@ -12,6 +12,7 @@ import logging
 import os
 
 import markdown as md_lib
+import nh3
 import resend
 
 logger = logging.getLogger(__name__)
@@ -23,13 +24,26 @@ logger = logging.getLogger(__name__)
 # LLM's mid-paragraph wrapping shows the way it was written.
 _MD_EXTENSIONS = ["extra", "sane_lists", "nl2br"]
 
+# The explanation/research/reason text is produced by LLMs from an untrusted
+# video transcript, then embedded as HTML in the email. Sanitize to a small
+# allow-list so no <script>, event handler, or javascript: URL can ride along.
+_SAFE_TAGS = {
+    "p", "br", "hr", "strong", "b", "em", "i", "u", "s", "blockquote",
+    "ul", "ol", "li", "h1", "h2", "h3", "h4", "h5", "h6",
+    "a", "code", "pre", "span", "div",
+    "table", "thead", "tbody", "tr", "th", "td",
+}
+_SAFE_ATTRS = {"a": {"href", "title"}}
+
 
 def _markdown_to_html(text: str) -> str:
     """Convert markdown to HTML, falling back to escaped plain text on failure."""
     if not text:
         return ""
     try:
-        return md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5")
+        rendered = md_lib.markdown(text, extensions=_MD_EXTENSIONS, output_format="html5")
+        # nh3 drops disallowed tags/attributes and unsafe URL schemes.
+        return nh3.clean(rendered, tags=_SAFE_TAGS, attributes=_SAFE_ATTRS)
     except Exception as e:
         logger.warning(f"Markdown conversion failed, falling back to plain: {e}")
         return html_lib.escape(text).replace("\n", "<br>")
