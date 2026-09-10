@@ -23,3 +23,7 @@ resend>=2.0.0
 
 # Markdown → HTML (so the LLM's **bold** and ## headings render properly in email)
 markdown>=3.6
+
+# HTML sanitizer — LLM/transcript-derived markdown is untrusted; strip unsafe
+# tags/attributes before embedding in the email body.
+nh3>=0.2.15
