@@ -110,3 +110,24 @@ jobs:
             --metrics=off --severity ERROR --error \
             --exclude node_modules --exclude .next --exclude dist --exclude '*.min.js' --exclude '*.md' \
             .
+
+  audit:
+    # שבע משפחות הכשל של secure-build-discipline. עוצר רק על ממצא קריטי/גבוה **ודאי**;
+    # ממצאים חשודים ומשימות לבדיקת סוכן נכנסים לסיכום של הריצה ולא עוצרים (שומר שעוצר
+    # על כל חשד מכבים אותו). נוסף ב-23-09-2026, תכנית "אבטחה בשגרה" שלב 2.
+    name: audit (secure-build engine)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Seven failure families (blocks on certain critical/high only)
+        env:
+          ENGINE: .github/security-audit/audit.py
+        run: |
+          rc=0
+          python3 "$ENGINE" scan . --no-external --fail-on certain-high --out "$RUNNER_TEMP/audit" || rc=$?
+          if [ -f "$RUNNER_TEMP/audit/audit.md" ]; then cat "$RUNNER_TEMP/audit/audit.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          exit $rc
