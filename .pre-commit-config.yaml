@@ -1,0 +1,18 @@
+# Copy to .pre-commit-config.yaml at the repo root, then once per Mac:
+#   brew install pre-commit gitleaks && pre-commit install
+# Blocks a commit that stages a secret or a private key. Verified 10-09-2026 by mutation:
+# a staged file with a known test key exits 1, a clean file exits 0.
+repos:
+  - repo: local
+    hooks:
+      - id: gitleaks-staged
+        name: gitleaks (staged changes)
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=5000]

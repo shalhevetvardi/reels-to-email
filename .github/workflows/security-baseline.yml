@@ -1,0 +1,112 @@
+# Security baseline for every deployed repo (drafted 10-09-2026, security-audit follow-up).
+# Copy to .github/workflows/security-baseline.yml. Three independent jobs:
+#   secrets      - gitleaks on the pushed commits (and full history on schedule/manual run)
+#   dependencies - osv-scanner over every lockfile/manifest; blocks on CRITICAL/HIGH only
+#   code         - semgrep security rulesets; blocks on ERROR-severity findings only
+# Every action is pinned to a commit SHA (the tag is a comment); Dependabot keeps the pins fresh.
+# Installed in reels-to-email on 23-09-2026 from the Storyteling baseline template, verbatim.
+name: security-baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1" # Monday 03:17 UTC = 06:17 Israel
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-baseline-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    name: secrets (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # gitleaks-action lists the PR's commits via GET /pulls/{n}/commits. The top-level block grants contents
+      # only, which sets pull-requests to none - a 403 in a PRIVATE repo before any scanning happens
+      # (measured 10-09-2026 on aimprove-manychat-bot). read, not write: inline PR comments stay off below.
+      pull-requests: read
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Inline PR comments would need pull-requests: write for a third-party action. Least privilege instead:
+          # a leak still fails the job and is listed in the job summary and the SARIF artifact.
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  dependencies:
+    name: dependencies (osv-scanner)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scan lockfiles and manifests
+        # exit 1 = vulnerabilities found (expected, the gate below decides); any other
+        # non-zero exit is a tool error and the gate fails because the results file is missing.
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        with:
+          scan-args: |-
+            --recursive
+            --format=json
+            --output-file=osv-results.json
+            ./
+      - name: Gate - fail on CRITICAL or HIGH
+        run: |
+          test -f osv-results.json || { echo "::error::osv-scanner produced no results file - tool error, not a clean run"; exit 2; }
+          python3 - <<'PY'
+          import json, sys, collections
+          d = json.load(open("osv-results.json"))
+          rows = []
+          for res in d.get("results", []):
+              src = res["source"]["path"]
+              for p in res.get("packages", []):
+                  for v in p.get("vulnerabilities", []):
+                      sev = (v.get("database_specific") or {}).get("severity", "UNKNOWN")
+                      rows.append((sev, p["package"]["name"], p["package"]["version"], v["id"], src))
+          counts = collections.Counter(r[0] for r in rows)
+          print("vulnerabilities by severity:", dict(counts) or "none")
+          blocking = [r for r in rows if r[0] in ("CRITICAL", "HIGH")]
+          for sev, name, ver, vid, src in sorted(set(blocking)):
+              print(f"::error::{sev} {name}@{ver} {vid} ({src})")
+          for sev, name, ver, vid, src in sorted(set(r for r in rows if r[0] not in ("CRITICAL", "HIGH"))):
+              print(f"::warning::{sev} {name}@{ver} {vid} ({src})")
+          sys.exit(1 if blocking else 0)
+          PY
+
+  code:
+    name: code (semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet semgrep==1.176.1
+      - name: Semgrep security rulesets (ERROR severity blocks)
+        run: |
+          semgrep scan \
+            --config p/security-audit --config p/owasp-top-ten --config p/secrets \
+            --metrics=off --severity ERROR --error \
+            --exclude node_modules --exclude .next --exclude dist --exclude '*.min.js' --exclude '*.md' \
+            .
