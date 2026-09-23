@@ -60,7 +60,7 @@ jobs:
         # exit 1 = vulnerabilities found (expected, the gate below decides); any other
         # non-zero exit is a tool error and the gate fails because the results file is missing.
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
         with:
           scan-args: |-
             --recursive
