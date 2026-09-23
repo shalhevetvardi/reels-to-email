@@ -10,7 +10,7 @@ python-dotenv>=1.0.0
 yt-dlp>=2024.10.0
 
 # OpenAI Whisper (transcription)
-openai>=1.50.0
+openai>=3.16.2
 
 # Anthropic Claude (explanation + tagging)
 anthropic>=0.40.0
