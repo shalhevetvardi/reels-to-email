@@ -6,6 +6,7 @@ You send a Reel link to your Telegram bot → a few seconds later you get an ema
 - 📝 A full, edited explanation of the video (not a summary — the actual content)
 - 🔎 Web research: official sources for any tools/repos mentioned + supplementary information
 - 🏷️ A tag: "relevant to me" or "not relevant", based on your profile
+- 🖼️ Carousels and image posts too: what the slides say, how the carousel is built, and a reproduction brief you can hand to an AI agent
 
 Built for people who save tons of Reels they never end up watching.
 
@@ -58,16 +59,50 @@ reels-to-email/
 │   └── profile.md          # YOUR personal profile (git-ignored)
 ├── src/
 │   ├── main.py             # Telegram bot entry point
-│   ├── pipeline.py         # Orchestrates the 6 stages
+│   ├── pipeline.py         # Orchestrates the stages (video flow + carousel flow)
 │   ├── profile_loader.py   # Reads config/profile.md
 │   ├── download.py         # Downloads audio with yt-dlp + ffmpeg
 │   ├── transcribe.py       # Transcribes with OpenAI Whisper
 │   ├── explain.py          # Writes explanation with Claude Sonnet
 │   ├── research.py         # Researches topic via Perplexity Sonar
 │   ├── tag.py              # Tags relevance with Claude Haiku
+│   ├── instagram_post.py   # Probes posts, downloads carousel slide images
+│   ├── carousel_analyze.py # Analyses carousel slides with Claude vision
 │   └── email_sender.py     # Sends final email via Resend
-└── data/                   # Temporary audio files (git-ignored)
+├── tests/                  # pytest suite (no network)
+└── data/                   # Temporary audio files and email previews (git-ignored)
 ```
+
+---
+
+## 🖼️ Carousels and image posts
+
+Send a post link (`instagram.com/p/...`) the same way you send a Reel. If it turns out to be a carousel or a single-image post, the email contains:
+
+- **The content** - what the slides say and teach
+- **How it is built** - the hook, a slide-by-slide breakdown, visual language and copy style
+- **A reproduction brief** - a copy-paste-ready brief for an AI agent that builds a similar carousel on your own topics
+- **The slides** - shown inline in the email
+- Research and a relevance tag, like for Reels
+
+Reels are unchanged: they go straight to the video flow. If a post link turns out to be a single video, it also takes the video flow. Anything you type next to the link in Telegram is passed to the analysis as a note.
+
+Optional settings (in `.env`):
+
+| Variable | Default | What it does |
+|---|---|---|
+| `CAROUSEL_MODEL` | `claude-sonnet-5-5` | Claude model used for the slide analysis |
+| `CAROUSEL_MAX_SLIDES` | `20` | Maximum number of slides analysed per post |
+
+A carousel costs noticeably more than a reel, because the slides are read as images and the answer is long. In a test run, a 10-slide carousel used about 23k input tokens for the slides (sent once, then read from the prompt cache by the next two calls) and about 19k output tokens across the three calls - check your model's current pricing.
+
+To preview a carousel email without sending it:
+
+```bash
+python run_once.py "https://www.instagram.com/p/.../" --no-send --note "focus on the hook"
+```
+
+The email is saved as a single file, `data/preview-<time>.html`, with the slides embedded.
 
 ---
 
