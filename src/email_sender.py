@@ -7,9 +7,12 @@ renders as a proper styled document — no raw `##` or `**` artifacts.
 
 dir="auto" lets each block pick LTR/RTL by its actual text content.
 """
+import base64
 import html as html_lib
 import logging
 import os
+import re
+from typing import Sequence
 
 import markdown as md_lib
 import nh3
@@ -190,6 +193,225 @@ def send_email(
             "html": html,
         }
     )
+
+    email_id = response.get("id", "unknown") if isinstance(response, dict) else getattr(response, "id", "unknown")
+    logger.info(f"Email sent: {email_id}")
+    return email_id
+
+
+# --- Carousel email ---
+
+_MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
+_MD_MARKERS = re.compile(r"[#*`>]")
+
+
+def _carousel_snippet(content: str) -> str:
+    # A heading makes a poor subject line; prefer the first lines of prose.
+    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+    prose = [ln for ln in lines if not ln.startswith("#")]
+    text = _MD_MARKERS.sub("", " ".join(prose or lines))
+    text = " ".join(text.split())
+    return text[:70] + ("..." if len(text) > 70 else "")
+
+
+def render_carousel_email(
+    *,
+    instagram_url: str,
+    author: str,
+    slide_count: int,
+    content: str,
+    structure: str,
+    brief: str,
+    research: str,
+    relevant: bool,
+    reason: str,
+    image_cids: Sequence[str] = (),
+) -> tuple[str, str]:
+    """Build (subject, html) for a carousel email. Pure: no network, no env."""
+    content_html = _markdown_to_html(content)
+    structure_html = _markdown_to_html(structure)
+    brief_html = _markdown_to_html(brief)
+    research_html = _markdown_to_html(research)
+    reason_html = _markdown_to_html(reason).strip()
+
+    badge_bg = "#dcfce7" if relevant else "#f1f5f9"
+    badge_color = "#15803d" if relevant else "#475569"
+    # For a carousel the tag judges the topic only - the breakdown of how it
+    # is built is useful even when the topic is not the reader's.
+    badge_text = "✓ התוכן רלוונטי" if relevant else "⏭ התוכן לא רלוונטי"
+    badge = (
+        f'<span style="display:inline-block;background:{badge_bg};color:{badge_color};'
+        f'padding:5px 14px;border-radius:999px;font-size:13px;font-weight:600;letter-spacing:0.2px;">'
+        f"{badge_text}</span>"
+    )
+
+    # Keep the "[Reels]" prefix first: the owner's Gmail filter matches it.
+    relevance_mark = "✓" if relevant else "⏭"
+    handle = re.sub(r"[^\w.]", "", author)[:30]
+    who = f"@{handle}: " if handle else ""
+    subject_line = f"[Reels] 🎠 {relevance_mark} {who}{_carousel_snippet(content)}"
+    subject_line = subject_line.replace("\r", " ").replace("\n", " ")
+
+    slides_card = ""
+    if image_cids:
+        imgs = "".join(
+            f'<img src="cid:{html_lib.escape(cid, quote=True)}" width="150" alt="slide {n}" '
+            f'style="border-radius:8px;margin:0 4px 8px 0;border:1px solid #e2e8f0;">'
+            for n, cid in enumerate(image_cids, start=1)
+        )
+        slides_card = f"""
+  <!-- Slides card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+    <h2 style="{_EMAIL_CSS['section_title']}">השקפים</h2>
+    <div>{imgs}</div>
+  </div>
+"""
+
+    brief_card = ""
+    if brief.strip():
+        brief_card = f"""
+  <!-- Reproduction brief card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}background:#f5f3ff;border:1px solid #c7d2fe;">
+    <h2 style="{_EMAIL_CSS['section_title']}">בריף לשחזור - להעתקה לסוכן AI</h2>
+    <div style="font-size:12px;color:#94a3b8;margin:-6px 0 14px;">אפשר להעתיק את החלק הזה כמו שהוא לסוכן שבונה קרוסלות.</div>
+    <div dir="auto" class="r2e-content" style="{_EMAIL_CSS['content']}">{brief_html}</div>
+  </div>
+"""
+
+    research_card = ""
+    if research.strip():
+        research_card = f"""
+  <!-- Research card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+    <h2 style="{_EMAIL_CSS['section_title']}">מחקר והרחבה</h2>
+    <div dir="auto" class="r2e-content" style="{_EMAIL_CSS['content']}">{research_html}</div>
+  </div>
+"""
+
+    html = f"""<!DOCTYPE html>
+<html dir="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reels to Email</title>
+{_CONTENT_STYLE_BLOCK}
+</head>
+<body style="{_EMAIL_CSS['body']}">
+
+<div dir="auto" style="{_EMAIL_CSS['wrapper']}">
+
+  <!-- Header card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+    <div style="{_EMAIL_CSS['label']}">Instagram Carousel</div>
+    <a href="{html_lib.escape(instagram_url)}" style="{_EMAIL_CSS['link']}">{html_lib.escape(instagram_url)}</a>
+    <div dir="auto" style="font-size:14px;color:#475569;margin-top:10px;">@{html_lib.escape(author)} · {int(slide_count)} שקפים</div>
+    <div style="margin-top:14px;">{badge}</div>
+    <div dir="auto" class="r2e-content" style="font-size:14px;color:#475569;margin-top:8px;line-height:1.55;">{reason_html}</div>
+  </div>
+{slides_card}
+  <!-- Content card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+    <h2 style="{_EMAIL_CSS['section_title']}">תוכן הקרוסלה</h2>
+    <div dir="auto" class="r2e-content" style="{_EMAIL_CSS['content']}">{content_html}</div>
+  </div>
+
+  <!-- Structure card -->
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+    <h2 style="{_EMAIL_CSS['section_title']}">איך הקרוסלה בנויה</h2>
+    <div dir="auto" class="r2e-content" style="{_EMAIL_CSS['content']}">{structure_html}</div>
+  </div>
+{brief_card}{research_card}
+  <!-- Footer -->
+  <div style="{_EMAIL_CSS['footer']}">
+    נשלח אוטומטית · reels-to-email
+  </div>
+
+</div>
+
+</body>
+</html>"""
+    return subject_line, html
+
+
+def send_carousel_email(
+    *,
+    instagram_url: str,
+    author: str,
+    slide_count: int,
+    content: str,
+    structure: str,
+    brief: str,
+    research: str,
+    relevant: bool,
+    reason: str,
+    images: Sequence[tuple[str, bytes, str]] = (),
+) -> str:
+    """Send a carousel email with the slides inline. Returns the Resend email ID.
+
+    `images` is a sequence of (filename, data, media_type). If the send with
+    attachments is refused by the server, it is retried once without them so
+    the text still arrives.
+    """
+    _resend_setup()
+    from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+    target_email = os.getenv("TARGET_EMAIL")
+
+    if not target_email or target_email == "PASTE_YOUR_EMAIL_HERE":
+        raise RuntimeError("TARGET_EMAIL missing from .env")
+
+    attachments = []
+    total = 0
+    for n, (filename, data, media_type) in enumerate(images, start=1):
+        if total + len(data) > _MAX_ATTACHMENT_BYTES:
+            break
+        total += len(data)
+        attachments.append(
+            {
+                "filename": filename,
+                "content": base64.b64encode(data).decode("ascii"),
+                "content_type": media_type,
+                "content_id": f"slide-{n:02d}",
+            }
+        )
+    if len(attachments) < len(images):
+        logger.info("Attached %d of %d slide images (size cap)", len(attachments), len(images))
+
+    fields = dict(
+        instagram_url=instagram_url,
+        author=author,
+        slide_count=slide_count,
+        content=content,
+        structure=structure,
+        brief=brief,
+        research=research,
+        relevant=relevant,
+        reason=reason,
+    )
+
+    def _send(subject: str, html: str, with_attachments: list) -> object:
+        payload = {
+            "from": f"Reels Pipeline <{from_email}>",
+            "to": [target_email],
+            "subject": subject,
+            "html": html,
+        }
+        if with_attachments:
+            payload["attachments"] = with_attachments
+        return resend.Emails.send(payload)
+
+    logger.info("Sending carousel email (%d slide images attached)...", len(attachments))
+    subject, html = render_carousel_email(**fields, image_cids=[a["content_id"] for a in attachments])
+    try:
+        response = _send(subject, html, attachments)
+    except Exception as e:
+        # Retry only when the server answered and refused. After a network error
+        # or timeout the first email may have gone out, and a retry would duplicate it.
+        refused = isinstance(e, resend.exceptions.ResendError) and getattr(e, "error_type", "") != "HttpClientError"
+        if not attachments or not refused:
+            raise
+        logger.warning("Send with attachments was refused (%s) - retrying without them", type(e).__name__)
+        subject, html = render_carousel_email(**fields, image_cids=())
+        response = _send(subject, html, [])
 
     email_id = response.get("id", "unknown") if isinstance(response, dict) else getattr(response, "id", "unknown")
     logger.info(f"Email sent: {email_id}")

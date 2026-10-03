@@ -30,6 +30,7 @@ from pipeline import run_pipeline
 from profile_loader import load_language
 from messages import t
 from authz import parse_allowed_ids, is_authorized, RateLimiter
+from instagram_post import extract_user_note
 
 # Load secrets from .env at the project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -116,7 +117,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except Exception:
             logger.exception("Failed to send status update")
 
-    result = await run_pipeline(instagram_url, status_callback=status_cb, language=LANGUAGE)
+    # Whatever the sender typed besides the link is passed on as a note.
+    user_note = extract_user_note(text)
+
+    result = await run_pipeline(
+        instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note
+    )
 
     if result["success"]:
         await update.message.reply_text(t("email_arrived", LANGUAGE))
