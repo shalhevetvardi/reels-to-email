@@ -212,6 +212,19 @@ The bot checks by itself, once a day, that the four API keys it depends on (Open
 
 ---
 
+## 🔁 Redeploys
+
+A redeploy (for example a merge to `main` on Railway) stops the old container while a link may still be in the middle of processing. The bot handles it like this:
+
+- The old container gets ten minutes to finish (`drainingSeconds` in `railway.json`), instead of being cut at once. The link that is being processed, and any link already waiting behind it, are finished and emailed as usual.
+- The sender gets one Telegram message that quotes their link and says the bot is updating and is still processing it.
+- A link that is picked up after that point is acknowledged with the same note.
+- If no email arrives within a few minutes of that message, send the link again.
+
+Links that were never received by the old container (sent during the switch) are picked up by the new one.
+
+---
+
 ## 🎛️ How to customize
 
 | What | Where |
@@ -263,6 +276,7 @@ At 30 Reels per month: **~$0.40/month**.
 | Email cut off | Explanation longer than `max_tokens` | Raise `max_tokens` in `src/explain.py` |
 | Bot doesn't respond | Token wrong, or `/start` not pressed | Re-check `.env`, click the bot link, press Start |
 | Alert email / Telegram message about a rejected key | The provider no longer accepts that API key (revoked or expired) | Create a new key at the provider, replace it in the host's variables (`.env` / Railway), then redeploy |
+| The bot said it is updating and no email arrived | The update stopped the old container before it could finish that link | Send the link again |
 | Bot silent to everyone (incl. you) | `ALLOWED_CHAT_IDS` not set (fail-closed) | Add your Telegram chat id to `ALLOWED_CHAT_IDS` in `.env` / Railway, then redeploy |
 
 ---
