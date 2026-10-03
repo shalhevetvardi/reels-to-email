@@ -43,6 +43,14 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "not_relevant": "not relevant",
         "email_arrived": "📬 Email sent — check your inbox (also spam, the first time).",
         "rate_limited": "🚦 Too many requests right now, so this link was not processed: {url}\nSend it again in a little while.",
+        "update_in_progress": (
+            "⏳ The bot is updating right now, in the middle of processing this link: {url}\n"
+            "I'm still processing it. If no email arrives in the next few minutes, send it again."
+        ),
+        "got_it_draining": (
+            "✅ Got the link: {url}\n"
+            "⏳ The bot is updating right now. If no email arrives in the next few minutes, send it again."
+        ),
         "failed_generic": "⚠️ Something went wrong while processing. It has been logged — please try again later.",
         "failed_step": "❌ Failed at this step: {error_type}\n{error_message}",
         "processing_failed": (
@@ -92,6 +100,8 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "not_relevant": "לא רלוונטי",
         "email_arrived": "📬 המייל בדרך אליך — בדקי את התיבה (כולל ספאם בפעם הראשונה).",
         "rate_limited": "🚦 יותר מדי בקשות כרגע, ולכן הקישור הזה לא טופל: {url}\nשלחי אותו שוב בעוד קצת.",
+        "update_in_progress": "⏳ הבוט מתעדכן עכשיו, באמצע העיבוד של הקישור הזה: {url}\nאני ממשיך לעבד אותו. אם לא יגיע עליו מייל בדקות הקרובות, שלחי אותו שוב.",
+        "got_it_draining": "✅ קיבלתי את הקישור: {url}\n⏳ הבוט מתעדכן עכשיו. אם לא יגיע עליו מייל בדקות הקרובות, שלחי אותו שוב.",
         "failed_generic": "⚠️ משהו השתבש בעיבוד. זה נרשם בלוג — נסי שוב מאוחר יותר.",
         "failed_step": "❌ משהו נכשל בשלב הזה: {error_type}\n{error_message}",
         "processing_failed": (

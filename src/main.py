@@ -15,10 +15,12 @@ import asyncio
 import os
 import re
 import logging
+import signal
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import LinkPreviewOptions, Update
+from telegram import LinkPreviewOptions, ReplyParameters, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -65,6 +67,27 @@ INSTAGRAM_URL_PATTERN = re.compile(
     r"(https?://)?(www\.)?(instagram\.com|instagr\.am)/(p|reel|reels|tv|share)/[\w\-/?=&]+",
     re.IGNORECASE,
 )
+
+# --- Graceful stop ---
+# A redeploy sends SIGTERM and then, after railway.json's drainingSeconds, SIGKILL. In that
+# window python-telegram-bot finishes the update being handled and the ones queued behind it;
+# what it does not do is tell the sender, so we track what is in flight and say so.
+
+
+@dataclass(eq=False)
+class _InFlight:
+    chat_id: int
+    message_id: int | None
+    url: str
+
+
+_in_flight: list[_InFlight] = []
+_draining = False
+# A task nobody references can be garbage collected before it finishes.
+_drain_task: asyncio.Task | None = None
+
+_NOTICE_TIMEOUT_SECONDS = 10
+_STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
 
 
 def _authorized(update: Update) -> bool:
@@ -134,35 +157,112 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     logger.info(f"Received Instagram URL from chat {chat_id}: {instagram_url}")
 
-    await update.message.reply_text(t("got_it", LANGUAGE))
-
-    async def status_cb(msg: str) -> None:
-        try:
-            await update.message.reply_text(msg)
-        except Exception:
-            logger.exception("Failed to send status update")
-
-    # Whatever the sender typed besides the link is passed on as a note.
-    user_note = extract_user_note(text)
-
-    result = await run_pipeline(
-        instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note
-    )
-
-    if result["success"]:
-        await update.message.reply_text(t("email_arrived", LANGUAGE))
-    else:
-        # Generic message only — details stay in the server log (see pipeline.py).
-        await update.message.reply_text(t("failed_generic", LANGUAGE))
-        # Detached: the sender already has their answer, and a slow key check must not delay it.
-        context.application.create_task(
-            report_failure(
-                _telegram_sender(context.bot),
-                send_alert_email,
-                language=LANGUAGE,
-                error=result.get("error", ""),
+    entry = _InFlight(chat_id, getattr(update.message, "message_id", None), instagram_url)
+    _in_flight.append(entry)
+    try:
+        if _draining:
+            await update.message.reply_text(
+                t("got_it_draining", LANGUAGE, url=instagram_url),
+                do_quote=True,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
+        else:
+            await update.message.reply_text(t("got_it", LANGUAGE))
+
+        async def status_cb(msg: str) -> None:
+            try:
+                await update.message.reply_text(msg)
+            except Exception:
+                logger.exception("Failed to send status update")
+
+        # Whatever the sender typed besides the link is passed on as a note.
+        user_note = extract_user_note(text)
+
+        result = await run_pipeline(
+            instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note
         )
+
+        if result["success"]:
+            await update.message.reply_text(t("email_arrived", LANGUAGE))
+        else:
+            # Generic message only — details stay in the server log (see pipeline.py).
+            await update.message.reply_text(t("failed_generic", LANGUAGE))
+            # Detached: the sender already has their answer, and a slow key check must not delay it.
+            context.application.create_task(
+                report_failure(
+                    _telegram_sender(context.bot),
+                    send_alert_email,
+                    language=LANGUAGE,
+                    error=result.get("error", ""),
+                )
+            )
+    finally:
+        _in_flight.remove(entry)
+
+
+async def _send_update_notice(application: Application, entry: _InFlight) -> None:
+    """Tell one sender their link is still being processed. Never raises."""
+    reply = (
+        ReplyParameters(message_id=entry.message_id, allow_sending_without_reply=True)
+        if entry.message_id is not None
+        else None
+    )
+    try:
+        await asyncio.wait_for(
+            application.bot.send_message(
+                chat_id=entry.chat_id,
+                text=t("update_in_progress", LANGUAGE, url=entry.url),
+                reply_parameters=reply,
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            ),
+            timeout=_NOTICE_TIMEOUT_SECONDS,
+        )
+    except Exception as e:
+        # Type only: the text of a Telegram error can carry the request details.
+        logger.warning("Update notice was not delivered (%s)", type(e).__name__)
+
+
+def _end_start_up() -> None:
+    raise SystemExit
+
+
+async def _announce_and_stop(application: Application, entries: list[_InFlight]) -> None:
+    try:
+        for entry in entries:
+            # It may have finished while earlier notices were being sent.
+            if entry in _in_flight:
+                await _send_update_notice(application, entry)
+    finally:
+        application.stop_running()
+        if not application.running:
+            # Still starting: stop_running() then only sets a flag the library reads once, right
+            # after post_init, so a signal during start-up would be ignored. SystemExit is what
+            # the library's own stop handler raises to end a start-up. As a loop callback, like
+            # the library's, so that it ends the loop instead of failing a task.
+            asyncio.get_running_loop().call_soon(_end_start_up)
+
+
+def _on_stop_signal(application: Application, signum: int) -> None:
+    global _draining, _drain_task
+    name = signal.Signals(signum).name
+    if _draining:
+        logger.info("Stop signal %s received again - already draining.", name)
+        return
+    _draining = True
+    entries = list(_in_flight)
+    logger.info("Stop signal %s received - %d link(s) in flight.", name, len(entries))
+    _drain_task = asyncio.get_running_loop().create_task(_announce_and_stop(application, entries))
+
+
+def _install_stop_handlers(application: Application) -> None:
+    loop = asyncio.get_running_loop()
+    try:
+        for sig in _STOP_SIGNALS:
+            loop.add_signal_handler(sig, _on_stop_signal, application, sig)
+    except (NotImplementedError, RuntimeError, ValueError) as e:
+        # Never a reason not to start: the library's own handlers stay in place, so a redeploy
+        # still finishes the link in progress. Only the message to the sender is lost.
+        logger.warning("Own stop handlers were not installed (%s).", type(e).__name__)
 
 
 _FIRST_CHECK_DELAY_SECONDS = 60
@@ -194,6 +294,7 @@ async def _health_loop(application: Application) -> None:
 
 
 async def _post_init(application: Application) -> None:
+    _install_stop_handlers(application)
     if interval_hours() > 0:
         application.bot_data["health_task"] = application.create_task(_health_loop(application))
     else:
@@ -205,6 +306,31 @@ async def _post_shutdown(application: Application) -> None:
     task = application.bot_data.get("health_task")
     if task is not None:
         task.cancel()
+
+
+def _build_application(request=None, get_updates_request=None) -> Application:
+    builder = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+    )
+    # Only the offline lifecycle test passes these, to answer without a network.
+    if request is not None:
+        builder = builder.request(request)
+    if get_updates_request is not None:
+        builder = builder.get_updates_request(get_updates_request)
+    app = builder.build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    return app
+
+
+def _run(application: Application) -> None:
+    # The library's own stop handlers are left on: they cover the first moments of start-up,
+    # until _post_init replaces them with ours (which tell the sender first). With none at all,
+    # a SIGTERM in that window would be ignored - the process is PID 1 in the container.
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 def main() -> None:
@@ -225,18 +351,10 @@ def main() -> None:
 
     logger.info(f"Interface language: {LANGUAGE}")
 
-    app = (
-        Application.builder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .post_init(_post_init)
-        .post_shutdown(_post_shutdown)
-        .build()
-    )
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app = _build_application()
 
     logger.info("Bot starting — polling for messages. Press Ctrl+C to stop.")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    _run(app)
 
 
 if __name__ == "__main__":

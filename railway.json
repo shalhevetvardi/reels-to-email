@@ -9,6 +9,7 @@
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5,
     "numReplicas": 1,
-    "overlapSeconds": 0
+    "overlapSeconds": 0,
+    "drainingSeconds": 600
   }
 }
