@@ -50,12 +50,39 @@ def test_skipped_link_is_named_in_a_reply_that_quotes_the_message(over_the_cap):
 
 
 def test_skipped_link_is_written_to_the_log(over_the_cap, caplog):
+    # Words around the link: the log must carry the link itself, not the sender's whole message.
     with caplog.at_level(logging.WARNING, logger="reels-to-email"):
-        asyncio.run(main.handle_message(_update(URL), SimpleNamespace()))
+        asyncio.run(main.handle_message(_update(f"look {URL} thanks"), SimpleNamespace()))
 
     lines = [r.getMessage() for r in caplog.records if "Rate limit reached" in r.getMessage()]
     assert len(lines) == 1
-    assert URL in lines[0]
+    assert lines[0].endswith(f"skipped {URL}")
+    assert "look" not in lines[0] and "thanks" not in lines[0]
+
+
+def test_link_sent_without_a_scheme_is_logged_with_https(over_the_cap, caplog):
+    with caplog.at_level(logging.WARNING, logger="reels-to-email"):
+        asyncio.run(main.handle_message(_update("instagram.com/reel/AbC123xyz/"), SimpleNamespace()))
+
+    lines = [r.getMessage() for r in caplog.records if "Rate limit reached" in r.getMessage()]
+    assert lines and lines[0].endswith("skipped https://instagram.com/reel/AbC123xyz/")
+
+
+@pytest.mark.parametrize("cap_allows", [True, False])
+def test_an_unknown_chat_gets_no_reply_and_no_run(monkeypatch, cap_allows):
+    # The allowlist comes first: someone who is not on it must not learn the bot exists,
+    # whether or not the cap would have refused the link.
+    monkeypatch.setattr(main, "ALLOWED_CHAT_IDS", frozenset({CHAT + 1}))
+    monkeypatch.setattr(main.rate_limiter, "allow", lambda chat_id: cap_allows)
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("the pipeline must not run for an unknown chat")
+
+    monkeypatch.setattr(main, "run_pipeline", must_not_run)
+    update = _update(URL)
+    asyncio.run(main.handle_message(update, SimpleNamespace()))
+
+    update.message.reply_text.assert_not_awaited()
 
 
 def test_link_sent_without_a_scheme_is_named_with_https(over_the_cap):
