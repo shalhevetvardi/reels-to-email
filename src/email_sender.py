@@ -418,6 +418,73 @@ def send_carousel_email(
     return email_id
 
 
+# --- Alert email ---
+
+# A separate monitoring job searches the inbox for this exact literal; do not reword it.
+_ALERT_SUBJECT_PREFIX = "⚠️ reels-to-email ALERT: "
+_ALERT_SUBJECT_DETAIL_MAX = 150
+
+
+def send_alert_email(detail: str, lines: Sequence[str]) -> str | None:
+    """Send a short alert email. Returns the Resend email ID, or None on ANY failure.
+
+    Never raises: it runs while the bot is already unhealthy, and an alert
+    failure must not take anything else down with it.
+    """
+    try:
+        _resend_setup()
+        from_email = os.getenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+        target_email = os.getenv("TARGET_EMAIL")
+        if not target_email or target_email == "PASTE_YOUR_EMAIL_HERE":
+            raise RuntimeError("TARGET_EMAIL missing")
+
+        clean_detail = str(detail).replace("\r", " ").replace("\n", " ")
+        subject = _ALERT_SUBJECT_PREFIX + clean_detail[:_ALERT_SUBJECT_DETAIL_MAX]
+
+        paragraphs = "\n".join(
+            f'    <p dir="auto" style="margin:0 0 12px;">{html_lib.escape(str(line))}</p>'
+            for line in lines
+        )
+        html = f"""<!DOCTYPE html>
+<html dir="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>reels-to-email ALERT</title>
+</head>
+<body style="{_EMAIL_CSS['body']}">
+
+<div dir="auto" style="{_EMAIL_CSS['wrapper']}">
+
+  <div dir="auto" style="{_EMAIL_CSS['card']}">
+{paragraphs}
+  </div>
+
+  <div style="{_EMAIL_CSS['footer']}">
+    נשלח אוטומטית · reels-to-email
+  </div>
+
+</div>
+
+</body>
+</html>"""
+
+        response = resend.Emails.send(
+            {
+                "from": f"Reels Pipeline <{from_email}>",
+                "to": [target_email],
+                "subject": subject,
+                "html": html,
+            }
+        )
+        email_id = response.get("id", "unknown") if isinstance(response, dict) else getattr(response, "id", "unknown")
+        logger.info(f"Alert email sent: {email_id}")
+        return email_id
+    except Exception as e:
+        logger.warning("Alert email was not sent (%s)", type(e).__name__)
+        return None
+
+
 if __name__ == "__main__":
     from pathlib import Path
     from dotenv import load_dotenv

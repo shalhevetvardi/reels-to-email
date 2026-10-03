@@ -68,7 +68,8 @@ reels-to-email/
 │   ├── tag.py              # Tags relevance with Claude Haiku
 │   ├── instagram_post.py   # Probes posts, downloads carousel slide images
 │   ├── carousel_analyze.py # Analyses carousel slides with Claude vision
-│   └── email_sender.py     # Sends final email via Resend
+│   ├── email_sender.py     # Sends final email via Resend
+│   └── health.py           # Daily API-key self-check and failure alerts
 ├── tests/                  # pytest suite (no network)
 └── data/                   # Temporary audio files and email previews (git-ignored)
 ```
@@ -199,6 +200,18 @@ Within ~1-2 minutes, the email arrives.
 
 ---
 
+## 🩺 Self-check
+
+The bot checks by itself, once a day, that the four API keys it depends on (OpenAI, Anthropic, Perplexity, Resend) are still accepted. The first check runs a minute after the bot starts.
+
+- The checks are free, read-only calls (a model list, a domain list, and one deliberately empty request that is refused before anything runs). Nothing is spent and nothing is sent to the providers except the key itself.
+- Only a definite refusal (or a key that is not set) raises an alert. A timeout or a provider outage is not treated as a bad key.
+- When a key is refused you get a Telegram message in every allowlisted chat, and an email whose subject starts with `reels-to-email ALERT` (so a mailbox filter or a monitoring job can find it). If the refused key is the Resend one, only the Telegram message is sent. The same problem is not repeated more than once every 20 hours.
+- When a link fails for a different reason, the bot checks the keys again right away; if they are fine it emails the error type only (never the message), at most once an hour.
+- `HEALTH_CHECK_INTERVAL_HOURS` sets the interval (default `24`); `0` turns the self-check off.
+
+---
+
 ## 🎛️ How to customize
 
 | What | Where |
@@ -249,6 +262,7 @@ At 30 Reels per month: **~$0.40/month**.
 | `Profile file not found` | `config/profile.md` not created | `cp config/profile.md.example config/profile.md` |
 | Email cut off | Explanation longer than `max_tokens` | Raise `max_tokens` in `src/explain.py` |
 | Bot doesn't respond | Token wrong, or `/start` not pressed | Re-check `.env`, click the bot link, press Start |
+| Alert email / Telegram message about a rejected key | The provider no longer accepts that API key (revoked or expired) | Create a new key at the provider, replace it in the host's variables (`.env` / Railway), then redeploy |
 | Bot silent to everyone (incl. you) | `ALLOWED_CHAT_IDS` not set (fail-closed) | Add your Telegram chat id to `ALLOWED_CHAT_IDS` in `.env` / Railway, then redeploy |
 
 ---
