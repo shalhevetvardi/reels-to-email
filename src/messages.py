@@ -49,6 +49,14 @@ MESSAGES: Dict[str, Dict[str, str]] = {
             "⚠️ Processing failed.\n{error}\n\n"
             "If this keeps happening, check the logs for the full traceback."
         ),
+        "health_alert": (
+            "⚠️ Bot self-check: a key the bot depends on is not accepted - {keys}. "
+            "Until it is replaced in the server settings, some links will fail."
+        ),
+        "failure_alert": (
+            "⚠️ Processing a link failed in the bot. Error type: {error_type}. "
+            "The key check found no rejected key; details are in the server log."
+        ),
     },
     "he": {
         "welcome": (
@@ -90,6 +98,8 @@ MESSAGES: Dict[str, Dict[str, str]] = {
             "⚠️ העיבוד נכשל.\n{error}\n\n"
             "אם זה ממשיך — בדוק את הלוגים."
         ),
+        "health_alert": "⚠️ בדיקה עצמית של הבוט: מפתח שהבוט תלוי בו לא מתקבל - {keys}. עד שהוא יוחלף בהגדרות השרת, חלק מהקישורים ייכשלו.",
+        "failure_alert": "⚠️ עיבוד קישור נכשל בבוט. סוג השגיאה: {error_type}. בבדיקת המפתחות לא נמצא מפתח שנדחה, והפירוט ביומן השרת.",
     },
 }
 
