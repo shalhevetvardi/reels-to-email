@@ -18,7 +18,7 @@ import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import LinkPreviewOptions, Update
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -121,8 +121,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Rate-limit the paid pipeline (only counts real Instagram triggers).
     chat_id = update.effective_chat.id
     if not rate_limiter.allow(chat_id):
-        logger.warning("Rate limit reached for chat %s", chat_id)
-        await update.message.reply_text(t("rate_limited", LANGUAGE))
+        # Name the skipped link in the log and in a reply that quotes the rejected message:
+        # several links sent together are refused together, and otherwise nobody can tell
+        # afterwards which ones to send again.
+        logger.warning("Rate limit reached for chat %s, skipped %s", chat_id, instagram_url)
+        await update.message.reply_text(
+            t("rate_limited", LANGUAGE, url=instagram_url),
+            do_quote=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
+        )
         return
 
     logger.info(f"Received Instagram URL from chat {chat_id}: {instagram_url}")
