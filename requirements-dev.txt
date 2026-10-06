@@ -3,3 +3,6 @@
 #   pip install -r requirements.txt -r requirements-dev.txt
 #   pytest -q
 pytest>=8.0
+# pygments - תלות עקיפה של pytest (אין import ישיר בריפו, ולא מותקן בקונטיינר הייצור: ה-Dockerfile מתקין requirements.txt בלבד).
+# osv-scanner פותר אותה ל-2.9.0 (PYSEC-2023-117 / GHSA-mrwq-x4v8-fh7p, ReDoS, נסגרו ב-2.15.1); רצפה מונעת את זה.
+pygments>=2.15.1
