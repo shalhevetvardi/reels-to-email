@@ -86,6 +86,8 @@ _in_flight: list[_InFlight] = []
 _draining = False
 # A task nobody references can be garbage collected before it finishes.
 _drain_task: asyncio.Task | None = None
+# Reports to Yitro's intake, held for the same reason until they finish.
+_intake_tasks: set[asyncio.Task] = set()
 
 _NOTICE_TIMEOUT_SECONDS = 10
 _STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
@@ -185,11 +187,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if result["success"]:
             await update.message.reply_text(t("email_arrived", LANGUAGE))
-            # Closes Yitro's open incident, if a failure opened one. After the reply, so the
-            # sender never waits on it; notify() is bounded by its own timeout and never raises.
-            await asyncio.to_thread(
+            # Closes Yitro's open incident, if a failure opened one. Detached: updates are handled
+            # one at a time, so a slow intake must not hold up the next link or a graceful stop.
+            task = asyncio.get_running_loop().create_task(asyncio.to_thread(
                 alert_intake.notify, alert_intake.CHECK_PROCESSING, "ok", "A link was processed."
-            )
+            ))
+            _intake_tasks.add(task)
+            task.add_done_callback(_intake_tasks.discard)
         else:
             # Generic message only — details stay in the server log (see pipeline.py).
             await update.message.reply_text(t("failed_generic", LANGUAGE))

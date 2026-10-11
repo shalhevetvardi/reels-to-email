@@ -56,6 +56,7 @@ def test_posts_the_report_with_the_senders_token(post):
     (url, kw), = post.calls
     assert url == "https://intake.example/v1/alert"
     assert kw["headers"]["Authorization"] == "Bearer tkn"
+    assert kw["headers"]["User-Agent"] == "reels-to-email-intake/1"
     assert kw["json"] == {"check": "reels.keys", "status": "fail", "system": "reels-to-email",
                           "summary": "Key not accepted: X"}
 
@@ -138,13 +139,51 @@ def _handled(monkeypatch, success):
                               message_id=1)
     update = SimpleNamespace(message=message, effective_chat=SimpleNamespace(id=chat))
     context = SimpleNamespace(bot=None, application=SimpleNamespace(create_task=lambda coro: coro.close()))
-    asyncio.run(main.handle_message(update, context))
+
+    async def handle_and_wait_for_reports():
+        await main.handle_message(update, context)
+        await asyncio.gather(*list(main._intake_tasks))
+
+    asyncio.run(handle_and_wait_for_reports())
 
 
 def test_a_processed_link_closes_the_incident(monkeypatch, post):
     _handled(monkeypatch, success=True)
     assert [(c[1]["json"]["check"], c[1]["json"]["status"]) for c in post.calls] == [
         ("reels.processing", "ok")]
+
+
+def test_the_ok_report_does_not_hold_up_the_handler(monkeypatch, post):
+    import threading
+
+    import main
+
+    release = threading.Event()
+    real = alert_intake.notify
+    monkeypatch.setattr(alert_intake, "notify", lambda *a: release.wait(5) and real(*a))
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(main, "ALLOWED_CHAT_IDS", frozenset({1}))
+    monkeypatch.setattr(main, "LANGUAGE", "he")
+    monkeypatch.setattr(main.rate_limiter, "allow", lambda chat_id: True)
+
+    async def pipeline(*a, **k):
+        return {"success": True}
+
+    monkeypatch.setattr(main, "run_pipeline", pipeline)
+    message = SimpleNamespace(text="https://www.instagram.com/reel/AbC123xyz/", reply_text=AsyncMock(),
+                              message_id=1)
+    update = SimpleNamespace(message=message, effective_chat=SimpleNamespace(id=1))
+
+    async def scenario():
+        await asyncio.wait_for(main.handle_message(update, SimpleNamespace(bot=None)), timeout=2)
+        assert len(main._intake_tasks) == 1  # still waiting on the intake, handler already done
+        release.set()
+        await asyncio.gather(*list(main._intake_tasks))
+
+    asyncio.run(scenario())
+    assert [c[1]["json"]["status"] for c in post.calls] == ["ok"]
 
 
 def test_a_failed_link_does_not_report_ok(monkeypatch, post):
