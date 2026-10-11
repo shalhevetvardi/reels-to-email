@@ -21,6 +21,7 @@ from typing import Awaitable, Callable, Sequence
 
 import httpx
 
+import alert_intake
 from messages import t
 
 logger = logging.getLogger(__name__)
@@ -210,6 +211,13 @@ async def run_health_check(
     """Check the keys; alert on Telegram and email when one is definitely refused."""
     statuses = await asyncio.to_thread(check_all)
     bad = problems(statuses)
+    # Every check is reported, so a fixed key closes Yitro's open incident. Key names only.
+    await asyncio.to_thread(
+        alert_intake.notify,
+        alert_intake.CHECK_KEYS,
+        "fail" if bad else "ok",
+        f"Key not accepted: {', '.join(sorted(s.name for s in bad))}" if bad else "All keys accepted.",
+    )
     if not bad:
         return statuses
 
@@ -250,6 +258,16 @@ async def report_failure(
     """After a failed pipeline run: check the keys, else email the exception type. Never raises."""
     try:
         now = time.time() if now is None else now
+        # The type only: the exception message may carry URLs, paths or key fragments.
+        error_type = _sanitize(str(error).split(":", 1)[0], "A-Za-z0-9_.", _FAILURE_TYPE_MAX)
+        error_type = error_type or "unknown"
+        # Before the email throttle: the intake groups repeats itself, and Yitro should see each one.
+        await asyncio.to_thread(
+            alert_intake.notify,
+            alert_intake.CHECK_PROCESSING,
+            "fail",
+            f"Processing a link failed: {error_type}",
+        )
         statuses = await run_health_check(
             send_telegram, send_email, language=language, reason="failure", now=now
         )
@@ -260,9 +278,6 @@ async def report_failure(
             return
         _last_alert["failure"] = now
 
-        # The type only: the exception message may carry URLs, paths or key fragments.
-        error_type = _sanitize(str(error).split(":", 1)[0], "A-Za-z0-9_.", _FAILURE_TYPE_MAX)
-        error_type = error_type or "unknown"
         text = t("failure_alert", language, error_type=error_type)
         await asyncio.to_thread(send_email, f"processing failed: {error_type}", [text])
     except Exception as e:

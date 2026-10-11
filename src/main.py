@@ -34,6 +34,7 @@ from profile_loader import load_language
 from messages import t
 from authz import parse_allowed_ids, is_authorized, RateLimiter
 from instagram_post import extract_user_note
+import alert_intake
 from email_sender import send_alert_email
 from health import interval_hours, report_failure, run_health_check
 
@@ -184,6 +185,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if result["success"]:
             await update.message.reply_text(t("email_arrived", LANGUAGE))
+            # Closes Yitro's open incident, if a failure opened one. After the reply, so the
+            # sender never waits on it; notify() is bounded by its own timeout and never raises.
+            await asyncio.to_thread(
+                alert_intake.notify, alert_intake.CHECK_PROCESSING, "ok", "A link was processed."
+            )
         else:
             # Generic message only — details stay in the server log (see pipeline.py).
             await update.message.reply_text(t("failed_generic", LANGUAGE))
