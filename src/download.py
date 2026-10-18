@@ -40,9 +40,32 @@ class NoAudioTrackError(Exception):
     """
 
 
+class InstagramBlockedError(Exception):
+    """Instagram answered this server with its login wall instead of the reel.
+
+    Seen in production on 18 Oct 2026, from the same Railway server that had been getting
+    library-music reels muted all day: "redirected to the login page. You have exceeded the
+    rate-limit for accessing posts anonymously". Another network still gets the reel.
+    """
+
+
+# yt-dlp's Instagram extractor words a refusal in one of these ways (lower-cased).
+_BLOCKED_MARKERS = (
+    "redirected to the login page",
+    "rate-limit",
+    "login required",
+    "http error 429",
+)
+
+
 def _is_no_audio_error(exc: DownloadError) -> bool:
     # yt-dlp's audio extraction raises this when ffprobe finds no audio stream.
     return "audio codec" in str(exc)
+
+
+def _is_blocked_error(exc: DownloadError) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _BLOCKED_MARKERS)
 
 
 def _id_from_link(url: str) -> str | None:
@@ -142,6 +165,8 @@ def download_video(url: str) -> Path:
             info = ydl.extract_info(url, download=True)
             video_id = info["id"]
     except DownloadError as exc:
+        if _is_blocked_error(exc):
+            raise InstagramBlockedError(f"Instagram refused this server the reel {_id_from_link(url)}") from exc
         if not _is_no_audio_error(exc):
             raise
         failed_id = _log_format_diagnostics(url, ydl_opts) or _id_from_link(url)

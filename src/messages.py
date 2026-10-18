@@ -61,6 +61,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
             "different server that gets the sound. You'll get the updates here and the email "
             "in a few minutes."
         ),
+        "blocked_fallback": (
+            "🔄 Instagram would not let my usual server download this reel, so I passed it to a "
+            "different server. You'll get the updates here and the email in a few minutes."
+        ),
         "failed_step": "❌ Failed at this step: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ Processing failed.\n{error}\n\n"
@@ -118,6 +122,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         ),
         "no_audio_fallback": (
             "🔇 בשרת הרגיל הרילס הזה ירד בלי שמע, אז העברתי אותו לשרת אחר שמקבל את השמע. "
+            "העדכונים יגיעו לכאן, והמייל בעוד כמה דקות."
+        ),
+        "blocked_fallback": (
+            "🔄 אינסטגרם לא נתנה לשרת הרגיל להוריד את הרילס הזה, אז העברתי אותו לשרת אחר. "
             "העדכונים יגיעו לכאן, והמייל בעוד כמה דקות."
         ),
         "failed_step": "❌ משהו נכשל בשלב הזה: {error_type}\n{error_message}",

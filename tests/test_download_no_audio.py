@@ -160,3 +160,35 @@ def test_regression_a_normal_download_still_returns_the_mp3(fake_ydl, monkeypatc
 
     monkeypatch.setattr(download.yt_dlp, "YoutubeDL", Working)
     assert download.download_video("https://www.instagram.com/reel/AbC/") == fake_ydl / "AbC.mp3"
+
+
+# --- Instagram's login wall instead of the reel (production, 18 Oct 2026) ---------------
+
+LOGIN_WALL = DownloadError(
+    "ERROR: [Instagram] DeXi-IboGbE: The webpage request was redirected to the login page. "
+    "You have exceeded the rate-limit for accessing posts anonymously. Use --cookies-from-browser "
+    "or --cookies for the authentication."
+)
+
+
+@pytest.mark.parametrize("failure", [
+    LOGIN_WALL,
+    DownloadError("ERROR: [Instagram] AbC: Requested content is not available, rate-limit reached or login required"),
+    DownloadError("ERROR: [Instagram] AbC: Main webpage is locked behind the login page. LOGIN REQUIRED"),
+    DownloadError("ERROR: unable to download webpage: HTTP Error 429: Too Many Requests"),
+    # one marker each, so every marker is shown to matter on its own
+    DownloadError("ERROR: [Instagram] AbC: The webpage request was redirected to the login page."),
+    DownloadError("ERROR: [Instagram] AbC: You have exceeded the rate-limit for accessing posts anonymously."),
+])
+def test_fix_a_login_wall_is_named_and_chained(fake_ydl, failure):
+    FakeYDL.failure = failure
+    with pytest.raises(download.InstagramBlockedError) as caught:
+        download.download_video(URL)
+    assert caught.value.__cause__ is failure
+    assert "DeXi-IboGbE" in str(caught.value)
+    assert FakeYDL.calls == [True]  # no diagnostics request: there is nothing to diagnose
+
+
+def test_regression_a_missing_audio_track_is_still_not_a_login_wall(fake_ydl):
+    with pytest.raises(download.NoAudioTrackError):
+        download.download_video(URL)
