@@ -18,7 +18,7 @@ def _post(slides, url=POST):
 
 
 def _stub_video_flow(monkeypatch, calls):
-    async def fake_video(url, cb, lang, on_no_audio=None):
+    async def fake_video(url, cb, lang, hand_off=None):
         calls.append("video")
         return {"success": True, "kind": "video"}
 

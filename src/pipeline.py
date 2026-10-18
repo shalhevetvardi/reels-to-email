@@ -18,7 +18,7 @@ import os
 from typing import Awaitable, Callable, Optional
 
 from carousel_analyze import SlideInput, analyze_carousel
-from download import NoAudioTrackError, download_video
+from download import InstagramBlockedError, NoAudioTrackError, download_video
 from email_sender import send_carousel_email, send_email
 from explain import explain_content
 from instagram_post import (
@@ -37,9 +37,10 @@ from transcribe import transcribe_video
 logger = logging.getLogger(__name__)
 
 StatusCallback = Optional[Callable[[str], Awaitable[None]]]
-# Called when the download has no audio track; True means another runner took the link
-# over (fallback.py) and will tell the sender itself.
-NoAudioHandler = Optional[Callable[[], Awaitable[bool]]]
+# Called when this server cannot get the reel as it should: no audio track, or Instagram's
+# login wall. True means another runner took the link over (fallback.py) and will tell the
+# sender itself.
+HandOffHandler = Optional[Callable[[], Awaitable[bool]]]
 
 # Whisper costs money per minute; a few video slides are enough to get the gist.
 MAX_VIDEO_SLIDE_TRANSCRIPTS = 5
@@ -76,11 +77,22 @@ async def _notify(callback: StatusCallback, msg: str) -> bool:
     return True
 
 
+async def _try_hand_off(hand_off: HandOffHandler) -> bool:
+    """Ask the hook to take the link over. Any failure of the hook counts as no."""
+    if hand_off is None:
+        return False
+    try:
+        return await hand_off() is True
+    except Exception as exc:
+        logger.warning(f"Hand-off failed: {type(exc).__name__}")
+        return False
+
+
 async def _run_video_pipeline(
     instagram_url: str,
     status_callback: StatusCallback = None,
     language: str = "en",
-    on_no_audio: NoAudioHandler = None,
+    hand_off: HandOffHandler = None,
 ) -> dict:
     """Run the full pipeline. Returns a dict with success/error info."""
     audio_path = None
@@ -126,12 +138,7 @@ async def _run_video_pipeline(
     except NoAudioTrackError as e:
         # A known per-reel limit, not a fault: download.py already logged why.
         logger.warning(f"Reel has no audio track: {e}")
-        handed_off = False
-        if on_no_audio is not None:
-            try:
-                handed_off = await on_no_audio()
-            except Exception as exc:
-                logger.warning(f"No-audio fallback failed: {type(exc).__name__}")
+        handed_off = await _try_hand_off(hand_off)
         message = t("no_audio_fallback" if handed_off else "no_audio", language)
         told = await _notify(status_callback, message)
         return {
@@ -140,6 +147,21 @@ async def _run_video_pipeline(
             "user_notified": told,
             "handed_off": handed_off,
         }
+
+    except InstagramBlockedError as e:
+        logger.warning(f"Instagram refused the download: {e}")
+        if await _try_hand_off(hand_off):
+            told = await _notify(status_callback, t("blocked_fallback", language))
+            return {
+                "success": False,
+                "error": f"{type(e).__name__}: {e}",
+                "user_notified": told,
+                "handed_off": True,
+            }
+        # Nobody took it over: the same answer and failure report as before this existed.
+        logger.exception("Pipeline failed")
+        told = await _notify(status_callback, t("failed_generic", language))
+        return {"success": False, "error": f"{type(e).__name__}: {e}", "user_notified": told}
 
     except Exception as e:
         logger.exception("Pipeline failed")
@@ -278,7 +300,7 @@ async def run_pipeline(
     status_callback: StatusCallback = None,
     language: str = "en",
     user_note: Optional[str] = None,
-    on_no_audio: NoAudioHandler = None,
+    hand_off: HandOffHandler = None,
 ) -> dict:
     """Run the pipeline for one URL, picking the carousel or the video flow."""
     # Only post/share links can be carousels; reels skip the probe entirely.
@@ -291,4 +313,4 @@ async def run_pipeline(
             logger.exception("Post probe failed - falling back to the video pipeline")
         if post is not None and not post.is_single_video:
             return await _run_carousel_pipeline(post, status_callback, language, user_note)
-    return await _run_video_pipeline(instagram_url, status_callback, language, on_no_audio)
+    return await _run_video_pipeline(instagram_url, status_callback, language, hand_off)

@@ -178,13 +178,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         user_note = extract_user_note(text)
 
         async def hand_off() -> bool:
-            # Instagram mutes library music for this server's network; a GitHub runner
-            # gets the sound (see fallback.py).
+            # Instagram mutes library music for this server's network, and sometimes shows it
+            # the login wall; a GitHub runner still gets the reel (see fallback.py).
             return await asyncio.to_thread(dispatch_fallback, instagram_url, chat_id, user_note)
 
         result = await run_pipeline(
             instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note,
-            on_no_audio=hand_off,
+            hand_off=hand_off,
         )
 
         if result["success"]:

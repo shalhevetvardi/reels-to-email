@@ -144,13 +144,13 @@ def test_fix_a_reel_nobody_took_gets_the_no_audio_message(monkeypatch, hook):
 def test_fix_run_pipeline_passes_the_hook_to_the_video_flow(monkeypatch):
     seen = {}
 
-    async def spy(url, cb, lang, on_no_audio=None):
-        seen["hook"] = on_no_audio
+    async def spy(url, cb, lang, hand_off=None):
+        seen["hook"] = hand_off
         return {"success": True}
 
     monkeypatch.setattr(pipeline, "_run_video_pipeline", spy)
     hook = AsyncMock(return_value=True)
-    asyncio.run(pipeline.run_pipeline("https://www.instagram.com/reel/AbC/", on_no_audio=hook))
+    asyncio.run(pipeline.run_pipeline("https://www.instagram.com/reel/AbC/", hand_off=hook))
     assert seen["hook"] is hook
 
 
@@ -159,6 +159,64 @@ def test_fix_the_hand_off_message_exists_in_every_language(language):
     text = t("no_audio_fallback", language)
     assert text != "no_audio_fallback"
     assert text != t("no_audio", language)
+
+
+# --- Instagram's login wall goes the same way ------------------------------------------
+
+def _blocked_run(monkeypatch, hook, failure=None):
+    def refused(url):
+        raise failure or download.InstagramBlockedError("Instagram refused this server the reel AbC")
+
+    monkeypatch.setattr(pipeline, "download_video", refused)
+    seen = []
+
+    async def callback(msg):
+        seen.append(msg)
+
+    result = asyncio.run(pipeline._run_video_pipeline(URL, callback, "he", hook))
+    return seen, result
+
+
+def test_fix_a_blocked_reel_is_handed_off_and_the_sender_told(monkeypatch):
+    seen, result = _blocked_run(monkeypatch, AsyncMock(return_value=True))
+    assert seen[-1] == t("blocked_fallback", "he")
+    assert result["handed_off"] is True
+    assert result["user_notified"] is True
+    assert result["error"].startswith("InstagramBlockedError")
+
+
+@pytest.mark.parametrize("hook", [
+    None,
+    AsyncMock(return_value=False),
+    AsyncMock(return_value="yes"),  # only a real True counts as taken over
+    AsyncMock(side_effect=RuntimeError("github is down")),
+])
+def test_regression_a_blocked_reel_nobody_took_fails_as_before(monkeypatch, hook):
+    seen, result = _blocked_run(monkeypatch, hook)
+    assert seen[-1] == t("failed_generic", "he")
+    assert not result.get("handed_off")  # so the bot still reports the failure
+    assert result["user_notified"] is True
+
+
+def test_regression_other_failures_are_never_handed_off(monkeypatch):
+    hook = AsyncMock(return_value=True)
+    seen, result = _blocked_run(monkeypatch, hook, failure=RuntimeError("transcription service down"))
+    hook.assert_not_called()
+    assert seen[-1] == t("failed_generic", "he")
+    assert not result.get("handed_off")
+
+
+@pytest.mark.parametrize("language", ["en", "he"])
+def test_fix_the_blocked_hand_off_message_exists_in_every_language(language):
+    text = t("blocked_fallback", language)
+    assert text != "blocked_fallback"
+    assert text not in (t("no_audio_fallback", language), t("failed_generic", language))
+
+
+def test_fix_the_blocked_hand_off_message_is_written_in_hebrew():
+    # A key missing in Hebrew falls back to English, which the check above cannot see.
+    assert t("blocked_fallback", "he") != t("blocked_fallback", "en")
+    assert "אינסטגרם" in t("blocked_fallback", "he")
 
 
 # --- the bot wires the hook to GitHub --------------------------------------------------
@@ -170,9 +228,9 @@ def _handle(monkeypatch, result, call_hook=True):
         dispatched.append((url, chat_id, note))
         return True
 
-    async def fake_pipeline(url, status_callback=None, language="en", user_note=None, on_no_audio=None):
+    async def fake_pipeline(url, status_callback=None, language="en", user_note=None, hand_off=None):
         if call_hook:
-            await on_no_audio()
+            await hand_off()
         return result
 
     monkeypatch.setattr(main, "ALLOWED_CHAT_IDS", frozenset({CHAT}))
@@ -293,7 +351,8 @@ def test_fix_a_successful_run_ends_with_the_email_message(monkeypatch):
     monkeypatch.setattr(fallback_job, "run_pipeline", fake_pipeline)
     assert asyncio.run(fallback_job.run(URL, "note", "he", send)) == 0
     assert sent == [t("email_arrived", "he")]
-    assert seen_kwargs.get("on_no_audio") is None  # the runner never hands off again
+    # The runner never hands off again: it passes no hook at all, under any name.
+    assert set(seen_kwargs) == {"status_callback", "language", "user_note"}
 
 
 @pytest.mark.parametrize("result, expected", [

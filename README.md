@@ -225,11 +225,11 @@ Links that were never received by the old container (sent during the switch) are
 
 ---
 
-## 🔇 Reels that arrive without sound
+## 🔇 Reels this server cannot get
 
-Some hosting networks get certain reels muted. Measured on 18-10-2026: for reels that use a song from Instagram's music library, Instagram answers requests from Railway's network (every Railway region tested) with the audio muted - *"This music can't be played due to recent licensing changes with the rights holder"* - while GitHub's runners, AWS and a home connection get the same reels with sound. Reels with their own sound are not affected.
+Some hosting networks get certain reels muted. Measured on 18-10-2026: for reels that use a song from Instagram's music library, Instagram answers requests from Railway's network (every Railway region tested) with the audio muted - *"This music can't be played due to recent licensing changes with the rights holder"* - while GitHub's runners, AWS and a home connection get the same reels with sound. Reels with their own sound are not affected. Later the same day the same server got Instagram's login wall instead of a reel (*"You have exceeded the rate-limit for accessing posts anonymously"*).
 
-When the download has no audio track, the bot hands the link to a GitHub Actions workflow (`.github/workflows/process-reel-fallback.yml`). The workflow runs the whole pipeline on a GitHub runner (`src/fallback_job.py`), sends the same status messages to the sender in Telegram, and emails the result. The sender is told the link was passed on. If the fallback is off or GitHub refuses the request, the bot says the reel came down without sound, as before.
+When the download has no audio track, or Instagram answers with its login wall, the bot hands the link to a GitHub Actions workflow (`.github/workflows/process-reel-fallback.yml`). The workflow runs the whole pipeline on a GitHub runner (`src/fallback_job.py`), sends the same status messages to the sender in Telegram, and emails the result. The sender is told the link was passed on. If the fallback is off or GitHub refuses the request, the bot answers as before: that the reel came down without sound, or that something went wrong.
 
 To turn it on:
 
