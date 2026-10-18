@@ -18,7 +18,7 @@ import os
 from typing import Awaitable, Callable, Optional
 
 from carousel_analyze import SlideInput, analyze_carousel
-from download import download_video
+from download import NoAudioTrackError, download_video
 from email_sender import send_carousel_email, send_email
 from explain import explain_content
 from instagram_post import (
@@ -59,13 +59,18 @@ def _max_slides() -> int:
     return min(max(value, 1), DEFAULT_MAX_SLIDES)
 
 
-async def _notify(callback: StatusCallback, msg: str) -> None:
+async def _notify(callback: StatusCallback, msg: str) -> bool:
+    """Send one status message. True only when it was delivered, so a failure result
+    can say whether the sender already knows (the bot then skips its own reply)."""
     logger.info(msg)
-    if callback is not None:
-        try:
-            await callback(msg)
-        except Exception as e:
-            logger.warning(f"Status callback failed: {e}")
+    if callback is None:
+        return False
+    try:
+        await callback(msg)
+    except Exception as e:
+        logger.warning(f"Status callback failed: {e}")
+        return False
+    return True
 
 
 async def _run_video_pipeline(
@@ -114,12 +119,18 @@ async def _run_video_pipeline(
             "explanation_length": len(explanation),
         }
 
+    except NoAudioTrackError as e:
+        # A known per-reel limit, not a fault: download.py already logged why.
+        logger.warning(f"Reel has no audio track: {e}")
+        told = await _notify(status_callback, t("no_audio", language))
+        return {"success": False, "error": f"{type(e).__name__}: {e}", "user_notified": told}
+
     except Exception as e:
         logger.exception("Pipeline failed")
         # Generic message to the user; full detail is already in logger.exception
         # above (do not echo exception text back to the sender).
-        await _notify(status_callback, t("failed_generic", language))
-        return {"success": False, "error": f"{type(e).__name__}: {e}"}
+        told = await _notify(status_callback, t("failed_generic", language))
+        return {"success": False, "error": f"{type(e).__name__}: {e}", "user_notified": told}
 
     finally:
         # Cleanup downloaded audio
@@ -242,8 +253,8 @@ async def _run_carousel_pipeline(
 
     except Exception as e:
         logger.exception("Carousel pipeline failed")
-        await _notify(status_callback, t("failed_generic", language))
-        return {"success": False, "error": f"{type(e).__name__}: {e}"}
+        told = await _notify(status_callback, t("failed_generic", language))
+        return {"success": False, "error": f"{type(e).__name__}: {e}", "user_notified": told}
 
 
 async def run_pipeline(

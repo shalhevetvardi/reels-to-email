@@ -196,7 +196,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             task.add_done_callback(_intake_tasks.discard)
         else:
             # Generic message only — details stay in the server log (see pipeline.py).
-            await update.message.reply_text(t("failed_generic", LANGUAGE))
+            # The pipeline already told the sender what happened, in its own words, when
+            # its status message got through; a second "something went wrong" would repeat
+            # it (production, 18 Oct 2026) or contradict it.
+            if not result.get("user_notified"):
+                await update.message.reply_text(t("failed_generic", LANGUAGE))
             # Detached: the sender already has their answer, and a slow key check must not delay it.
             context.application.create_task(
                 report_failure(
