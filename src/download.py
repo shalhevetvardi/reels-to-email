@@ -12,9 +12,12 @@ Cookies handling:
 """
 import logging
 import os
+import re
 from pathlib import Path
 
 import yt_dlp
+from yt_dlp.utils import DownloadError
+from yt_dlp.version import __version__ as YT_DLP_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +26,63 @@ DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 COOKIES_FILE = PROJECT_ROOT / "cookies.txt"
+
+_VIDEO_ID = re.compile(r"[\w-]+")
+_LINK_ID = re.compile(r"/(?:reel|reels|p|tv)/([\w-]+)")
+
+
+class NoAudioTrackError(Exception):
+    """The reel downloaded, but the file has no sound track to transcribe.
+
+    Seen in production (Oct 2026): a few reels reached the server as video only,
+    every time, while the same links offer an audio stream elsewhere. Sending the
+    link again returns the same file, so the sender is told that instead of "later".
+    """
+
+
+def _is_no_audio_error(exc: DownloadError) -> bool:
+    # yt-dlp's audio extraction raises this when ffprobe finds no audio stream.
+    return "audio codec" in str(exc)
+
+
+def _id_from_link(url: str) -> str | None:
+    match = _LINK_ID.search(url)
+    return match.group(1) if match else None
+
+
+def _log_format_diagnostics(url: str, ydl_opts: dict) -> str | None:
+    """Ask yt-dlp, without downloading, what it picks and what Instagram offers, and
+    log it. This is the evidence for why the file had no sound; the signed media
+    links in the answer stay out of the log. Returns the video id when it can be read."""
+    opts = {k: ydl_opts[k] for k in ("format", "noplaylist", "cookiefile") if k in ydl_opts}
+    opts.update(quiet=True, no_warnings=True, simulate=True, socket_timeout=30)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False) or {}
+    except Exception as exc:
+        logger.warning(f"Format diagnostics unavailable ({type(exc).__name__}) for {url}")
+        return None
+    offered = ", ".join(
+        f"{f.get('format_id')}:{f.get('ext')}:v={f.get('vcodec')}:a={f.get('acodec')}:{f.get('tbr')}"
+        for f in info.get("formats") or []
+    )
+    logger.warning(
+        f"No audio track in the download of {url}. yt-dlp {YT_DLP_VERSION} selected "
+        f"format_id={info.get('format_id')} (acodec={info.get('acodec')}, "
+        f"vcodec={info.get('vcodec')}). Formats offered: {offered or 'none'}"
+    )
+    return info.get("id")
+
+
+def _remove_leftovers(video_id: str | None) -> None:
+    """yt-dlp keeps the downloaded video when audio extraction fails, 8-11 MB each time."""
+    if not video_id or not _VIDEO_ID.fullmatch(video_id):
+        return
+    for leftover in DATA_DIR.glob(f"{video_id}.*"):
+        try:
+            leftover.unlink()
+        except OSError as exc:
+            logger.warning(f"Cleanup failed for {leftover.name}: {exc}")
 
 
 def _resolve_cookies_path() -> Path | None:
@@ -77,9 +137,16 @@ def download_video(url: str) -> Path:
             "env var with the contents of a cookies.txt export."
         )
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        video_id = info["id"]
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_id = info["id"]
+    except DownloadError as exc:
+        if not _is_no_audio_error(exc):
+            raise
+        failed_id = _log_format_diagnostics(url, ydl_opts) or _id_from_link(url)
+        _remove_leftovers(failed_id)
+        raise NoAudioTrackError(f"no audio track in the download of {failed_id}") from exc
 
     # After post-processing, the file should be {id}.mp3
     path = DATA_DIR / f"{video_id}.mp3"

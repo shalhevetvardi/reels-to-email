@@ -52,6 +52,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
             "⏳ The bot is updating right now. If no email arrives in the next few minutes, send it again."
         ),
         "failed_generic": "⚠️ Something went wrong while processing. It has been logged — please try again later.",
+        "no_audio": (
+            "🔇 This reel came down without sound, so there is nothing to transcribe. "
+            "Instagram probably does not hand its audio to my server. Sending it again will not help."
+        ),
         "failed_step": "❌ Failed at this step: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ Processing failed.\n{error}\n\n"
@@ -103,6 +107,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "update_in_progress": "⏳ הבוט מתעדכן עכשיו, באמצע העיבוד של הקישור הזה: {url}\nאני ממשיך לעבד אותו. אם לא יגיע עליו מייל בדקות הקרובות, שלחי אותו שוב.",
         "got_it_draining": "✅ קיבלתי את הקישור: {url}\n⏳ הבוט מתעדכן עכשיו. אם לא יגיע עליו מייל בדקות הקרובות, שלחי אותו שוב.",
         "failed_generic": "⚠️ משהו השתבש בעיבוד. זה נרשם בלוג — נסי שוב מאוחר יותר.",
+        "no_audio": (
+            "🔇 הרילס הזה ירד בלי שמע, ולכן אין מה לתמלל. "
+            "כנראה אינסטגרם לא מוסרת את השמע שלו לשרת שלי. שליחה חוזרת לא תעזור."
+        ),
         "failed_step": "❌ משהו נכשל בשלב הזה: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ העיבוד נכשל.\n{error}\n\n"
