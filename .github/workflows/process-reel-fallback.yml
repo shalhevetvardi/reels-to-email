@@ -1,0 +1,70 @@
+# The no-audio fallback (src/fallback.py explains why). The bot on Railway starts this
+# when Instagram hands its server a reel without sound; a GitHub runner gets the sound,
+# runs the whole pipeline (src/fallback_job.py) and tells the sender in Telegram.
+# Only workflow_dispatch starts it, and that needs write access to the repository.
+#
+# Secrets it needs (Settings -> Secrets and variables -> Actions), the same values as
+# the bot's variables on Railway: ALLOWED_CHAT_IDS, TELEGRAM_BOT_TOKEN, OPENAI_API_KEY,
+# ANTHROPIC_API_KEY, PERPLEXITY_API_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL, TARGET_EMAIL,
+# PROFILE_CONTENT, INTERFACE_LANGUAGE.
+name: process-reel-fallback
+run-name: process-reel-fallback
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Instagram link
+        required: true
+        type: string
+      chat_id:
+        description: Telegram chat to report to (must be on ALLOWED_CHAT_IDS)
+        required: true
+        type: string
+      note:
+        description: What the sender wrote next to the link
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: process-reel-fallback
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install ffmpeg
+        run: command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+      - name: Install dependencies
+        run: pip install --quiet -r requirements.txt
+      - name: Process the link
+        # The request is read from the event file, never passed as a step variable:
+        # GitHub prints step variables at the top of the step, and this repository's
+        # runs are public. Secrets are printed masked.
+        env:
+          ALLOWED_CHAT_IDS: ${{ secrets.ALLOWED_CHAT_IDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          TARGET_EMAIL: ${{ secrets.TARGET_EMAIL }}
+          PROFILE_CONTENT: ${{ secrets.PROFILE_CONTENT }}
+          INTERFACE_LANGUAGE: ${{ secrets.INTERFACE_LANGUAGE }}
+        run: python src/fallback_job.py

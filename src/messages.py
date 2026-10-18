@@ -56,6 +56,11 @@ MESSAGES: Dict[str, Dict[str, str]] = {
             "🔇 This reel came down without sound, so there is nothing to transcribe. "
             "Instagram probably does not hand its audio to my server. Sending it again will not help."
         ),
+        "no_audio_fallback": (
+            "🔇 On my usual server this reel came down without sound, so I passed it to a "
+            "different server that gets the sound. You'll get the updates here and the email "
+            "in a few minutes."
+        ),
         "failed_step": "❌ Failed at this step: {error_type}\n{error_message}",
         "processing_failed": (
             "⚠️ Processing failed.\n{error}\n\n"
@@ -110,6 +115,10 @@ MESSAGES: Dict[str, Dict[str, str]] = {
         "no_audio": (
             "🔇 הרילס הזה ירד בלי שמע, ולכן אין מה לתמלל. "
             "כנראה אינסטגרם לא מוסרת את השמע שלו לשרת שלי. שליחה חוזרת לא תעזור."
+        ),
+        "no_audio_fallback": (
+            "🔇 בשרת הרגיל הרילס הזה ירד בלי שמע, אז העברתי אותו לשרת אחר שמקבל את השמע. "
+            "העדכונים יגיעו לכאן, והמייל בעוד כמה דקות."
         ),
         "failed_step": "❌ משהו נכשל בשלב הזה: {error_type}\n{error_message}",
         "processing_failed": (
