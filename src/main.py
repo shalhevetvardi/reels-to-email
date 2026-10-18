@@ -13,7 +13,6 @@ Run with:
 
 import asyncio
 import os
-import re
 import logging
 import signal
 from dataclasses import dataclass
@@ -30,6 +29,8 @@ from telegram.ext import (
 )
 
 from pipeline import run_pipeline
+from fallback import dispatch_fallback
+from links import INSTAGRAM_URL_PATTERN
 from profile_loader import load_language
 from messages import t
 from authz import parse_allowed_ids, is_authorized, RateLimiter
@@ -63,11 +64,6 @@ ALLOWED_CHAT_IDS = parse_allowed_ids(os.getenv("ALLOWED_CHAT_IDS"))
 _RATE_LIMIT_MAX_PER_HOUR = int(os.getenv("RATE_LIMIT_MAX_PER_HOUR", "10"))
 rate_limiter = RateLimiter(max_per_window=_RATE_LIMIT_MAX_PER_HOUR, window_seconds=3600)
 
-# Match Instagram links: reels, posts, IGTV, share links
-INSTAGRAM_URL_PATTERN = re.compile(
-    r"(https?://)?(www\.)?(instagram\.com|instagr\.am)/(p|reel|reels|tv|share)/[\w\-/?=&]+",
-    re.IGNORECASE,
-)
 
 # --- Graceful stop ---
 # A redeploy sends SIGTERM and then, after railway.json's drainingSeconds, SIGKILL. In that
@@ -181,8 +177,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Whatever the sender typed besides the link is passed on as a note.
         user_note = extract_user_note(text)
 
+        async def hand_off() -> bool:
+            # Instagram mutes library music for this server's network; a GitHub runner
+            # gets the sound (see fallback.py).
+            return await asyncio.to_thread(dispatch_fallback, instagram_url, chat_id, user_note)
+
         result = await run_pipeline(
-            instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note
+            instagram_url, status_callback=status_cb, language=LANGUAGE, user_note=user_note,
+            on_no_audio=hand_off,
         )
 
         if result["success"]:
@@ -201,6 +203,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # it (production, 18 Oct 2026) or contradict it.
             if not result.get("user_notified"):
                 await update.message.reply_text(t("failed_generic", LANGUAGE))
+            if result.get("handed_off"):
+                # Not a failure yet: the fallback runner has the link and reports its own outcome.
+                return
             # Detached: the sender already has their answer, and a slow key check must not delay it.
             context.application.create_task(
                 report_failure(

@@ -225,6 +225,21 @@ Links that were never received by the old container (sent during the switch) are
 
 ---
 
+## 🔇 Reels that arrive without sound
+
+Some hosting networks get certain reels muted. Measured on 18-10-2026: for reels that use a song from Instagram's music library, Instagram answers requests from Railway's network (every Railway region tested) with the audio muted - *"This music can't be played due to recent licensing changes with the rights holder"* - while GitHub's runners, AWS and a home connection get the same reels with sound. Reels with their own sound are not affected.
+
+When the download has no audio track, the bot hands the link to a GitHub Actions workflow (`.github/workflows/process-reel-fallback.yml`). The workflow runs the whole pipeline on a GitHub runner (`src/fallback_job.py`), sends the same status messages to the sender in Telegram, and emails the result. The sender is told the link was passed on. If the fallback is off or GitHub refuses the request, the bot says the reel came down without sound, as before.
+
+To turn it on:
+
+1. Create a fine-grained GitHub token for this repository only, with **Actions: Read and write** and nothing else, and set it on the bot as `GITHUB_FALLBACK_TOKEN` (`GITHUB_FALLBACK_REPO` names another repository, for a fork).
+2. Add the repository secrets the workflow lists at its top, with the same values as the bot's variables.
+
+The job refuses any link that is not one Instagram link and any chat that is not on `ALLOWED_CHAT_IDS`. Because the repository is public, so is the run's log: the job reads the request from the event file rather than from step variables, masks its values, and keeps the pipeline's own log out of the run.
+
+---
+
 ## 🎛️ How to customize
 
 | What | Where |
