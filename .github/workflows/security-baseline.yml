@@ -1,10 +1,42 @@
-# Security baseline for every deployed repo (drafted 10-09-2026, security-audit follow-up).
-# Copy to .github/workflows/security-baseline.yml. Three independent jobs:
-#   secrets      - gitleaks on the pushed commits (and full history on schedule/manual run)
-#   dependencies - osv-scanner over every lockfile/manifest; blocks on CRITICAL/HIGH only
-#   code         - semgrep security rulesets; blocks on ERROR-severity findings only
+# GENERATED from Storyteling/פרויקטים/ביקורת-אבטחה-2026-09/קלוד/קלוד קוד/baseline/security-baseline.yml
+# by scripts/security-audit-vendor.py. Edit the template there and re-run - not this copy.
+# Security baseline for every deployed repo (drafted 10-09-2026, security-audit follow-up;
+# one job since 19-10-2026). This template is the source: every repo's
+# .github/workflows/security-baseline.yml is GENERATED from it by
+#   python3 Storyteling/scripts/security-audit-vendor.py apply <checkout> --workflow [--canonical]
+# (or `rollout --workflow --repo <name>`). Edit here, never in a repo. The generator applies
+# exactly two per-repo differences: the ENGINE path (Storyteling runs the source, other repos
+# a vendored copy) and `--config=osv-scanner.toml` where that file exists at the repo root.
+#
+# Four scanners, ONE job. GitHub bills every job rounded up to a full minute, and the per-job
+# overhead (runner start, harden-runner, checkout) was most of the cost: as four jobs this was
+# ~6 billed minutes per run in Storyteling, on every PR and again on every push to main
+# (~11,000 minutes in Oct 1-18 2026). Every scanner step runs even if an earlier one failed
+# (`!cancelled()`), so one failure never hides another, and the summary lists all four.
+#   code (semgrep)          - security rulesets; blocks on ERROR. Skipped when the change is
+#                             only *.md files, because semgrep excludes '*.md' anyway - the code
+#                             it would scan is exactly the code already scanned on main.
+#   audit (secure-build engine) - the seven failure families; blocks on certain critical/high only.
+#   secrets (gitleaks)      - PR: the PR's commits; push: the pushed commits; schedule/manual:
+#                             the full history (that is what fetch-depth: 0 is for).
+#   dependencies (osv-scanner) - every lockfile/manifest; blocks on CRITICAL/HIGH only. Never
+#                             skipped: the image pull dominates its cost, and a new advisory can
+#                             land on any day.
+# Order matters: semgrep and audit read the working tree (audit also reads untracked files), and
+# gitleaks/osv write result files into it - so the readers run first.
+#
+# When it runs:
+#   pull_request       - all four (semgrep as above). A new push to the PR cancels the old run.
+#   push to main       - SKIPPED when the commit is GitHub's own merge of a PR (committer
+#                        noreply@github.com and "(#N)" / "Merge pull request #N"): that exact
+#                        change was scanned as the PR. A skipped check counts as passing for
+#                        merge-approval-guard and for Render's checksPass. Any other push
+#                        (local git, automation, the web editor) is scanned in full. Push runs
+#                        are never cancelled by a later push (149 were, in Oct 1-18).
+#   schedule / manual  - everything, gitleaks over the full history.
+# On dependabot[bot] PRs semgrep and gitleaks skip (the bot only touches a lockfile it generated);
+# osv and audit still run - a version bump is exactly what osv exists to catch.
 # Every action is pinned to a commit SHA (the tag is a comment); Dependabot keeps the pins fresh.
-# Installed in reels-to-email on 23-09-2026 from the Storyteling baseline template, verbatim.
 name: security-baseline
 
 on:
@@ -19,14 +51,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: security-baseline-${{ github.ref }}
+  # Only PR runs replace each other. push/schedule/manual each get their own group (run_id).
+  group: security-baseline-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
-  secrets:
-    name: secrets (gitleaks)
+  scan:
+    name: scan (semgrep, audit, gitleaks, osv-scanner)
+    if: >-
+      github.event_name != 'push'
+      || github.event.head_commit.committer.email != 'noreply@github.com'
+      || !(contains(github.event.head_commit.message, ' (#')
+           || startsWith(github.event.head_commit.message, 'Merge pull request #'))
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       # gitleaks-action lists the PR's commits via GET /pulls/{n}/commits. The top-level block grants contents
@@ -40,25 +78,91 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+
+      # Decides ONLY whether semgrep runs. Prints counts, never file names. Fails closed: if the
+      # diff can't be computed, or the output is missing, semgrep runs (the gate is != 'false').
+      # -z: names come back raw (Hebrew, spaces, quotes) - without it git quotes them and a
+      # quoted "x.md" no longer ends in .md.
+      - name: changes - does semgrep have anything new to scan?
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+          out=true
+          why="full scan ($EVENT)"
+          case "$EVENT" in
+            pull_request) from=HEAD^1 ;;
+            push) from="$BEFORE" ;;
+            *) from="" ;;
+          esac
+          if [ -n "$from" ]; then
+            if names=$(git -c core.quotepath=off diff --name-only --no-renames -z "$from" HEAD | tr '\0' '\n'); then
+              all=$(printf '%s\n' "$names" | grep -c . || true)
+              code=$(printf '%s\n' "$names" | grep -v '\.md$' | grep -c . || true)
+              if [ "$all" -gt 0 ] && [ "$code" -eq 0 ]; then
+                out=false
+                why="only .md files changed ($all)"
+              else
+                why="$code of $all changed files are not .md"
+              fi
+            else
+              why="could not compute the diff - scanning anyway"
+            fi
+          fi
+          echo "semgrep=$out" >> "$GITHUB_OUTPUT"
+          echo "why=$why" >> "$GITHUB_OUTPUT"
+          echo "semgrep: $out ($why)"
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: ${{ !cancelled() && steps.changes.outputs.semgrep != 'false' && github.actor != 'dependabot[bot]' }}
+        with:
+          python-version: "3.12"
+      - name: install semgrep
+        if: ${{ !cancelled() && steps.changes.outputs.semgrep != 'false' && github.actor != 'dependabot[bot]' }}
+        run: pip install --quiet semgrep==1.176.1
+      - name: code (semgrep) - ERROR severity blocks
+        id: semgrep
+        if: ${{ !cancelled() && steps.changes.outputs.semgrep != 'false' && github.actor != 'dependabot[bot]' }}
+        run: |
+          semgrep scan \
+            --config p/security-audit --config p/owasp-top-ten --config p/secrets \
+            --metrics=off --severity ERROR --error \
+            --exclude node_modules --exclude .next --exclude dist --exclude '*.min.js' --exclude '*.md' \
+            .
+
+      # שבע משפחות הכשל של secure-build-discipline. עוצר רק על ממצא קריטי/גבוה **ודאי**;
+      # ממצאים חשודים ומשימות לבדיקת סוכן נכנסים לסיכום של הריצה ולא עוצרים (שומר שעוצר
+      # על כל חשד מכבים אותו). נוסף ב-23-09-2026, תכנית "אבטחה בשגרה" שלב 2.
+      - name: audit (secure-build engine)
+        id: audit
+        if: ${{ !cancelled() }}
+        env:
+          ENGINE: .github/security-audit/audit.py
+        run: |
+          rc=0
+          python3 "$ENGINE" scan . --no-external --fail-on certain-high --out "$RUNNER_TEMP/audit" || rc=$?
+          if [ -f "$RUNNER_TEMP/audit/audit.md" ]; then cat "$RUNNER_TEMP/audit/audit.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          exit $rc
+
+      - name: secrets (gitleaks)
+        id: gitleaks
+        if: ${{ !cancelled() && github.actor != 'dependabot[bot]' }}
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Inline PR comments would need pull-requests: write for a third-party action. Least privilege instead:
           # a leak still fails the job and is listed in the job summary and the SARIF artifact.
           GITLEAKS_ENABLE_COMMENTS: "false"
 
-  dependencies:
-    name: dependencies (osv-scanner)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Scan lockfiles and manifests
+      - name: dependencies (osv-scanner) - scan lockfiles and manifests
+        id: osv
+        if: ${{ !cancelled() }}
         # exit 1 = vulnerabilities found (expected, the gate below decides); any other
         # non-zero exit is a tool error and the gate fails because the results file is missing.
+        # Time-limited exceptions live in osv-scanner.toml at the repo root, when the repo has one:
+        # the generator then adds --config=osv-scanner.toml below.
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
         with:
@@ -67,7 +171,9 @@ jobs:
             --format=json
             --output-file=osv-results.json
             ./
-      - name: Gate - fail on CRITICAL or HIGH
+      - name: dependencies (osv-scanner) - fail on CRITICAL or HIGH
+        id: osv_gate
+        if: ${{ !cancelled() }}
         run: |
           test -f osv-results.json || { echo "::error::osv-scanner produced no results file - tool error, not a clean run"; exit 2; }
           python3 - <<'PY'
@@ -90,44 +196,21 @@ jobs:
           sys.exit(1 if blocking else 0)
           PY
 
-  code:
-    name: code (semgrep)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
-      - run: pip install --quiet semgrep==1.176.1
-      - name: Semgrep security rulesets (ERROR severity blocks)
-        run: |
-          semgrep scan \
-            --config p/security-audit --config p/owasp-top-ten --config p/secrets \
-            --metrics=off --severity ERROR --error \
-            --exclude node_modules --exclude .next --exclude dist --exclude '*.min.js' --exclude '*.md' \
-            .
-
-  audit:
-    # שבע משפחות הכשל של secure-build-discipline. עוצר רק על ממצא קריטי/גבוה **ודאי**;
-    # ממצאים חשודים ומשימות לבדיקת סוכן נכנסים לסיכום של הריצה ולא עוצרים (שומר שעוצר
-    # על כל חשד מכבים אותו). נוסף ב-23-09-2026, תכנית "אבטחה בשגרה" שלב 2.
-    name: audit (secure-build engine)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
-        with:
-          egress-policy: audit
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Seven failure families (blocks on certain critical/high only)
+      - name: summary - what ran and why
+        if: ${{ always() }}
         env:
-          ENGINE: .github/security-audit/audit.py
+          WHY: ${{ steps.changes.outputs.why }}
+          SEMGREP: ${{ steps.semgrep.outcome }}
+          AUDIT: ${{ steps.audit.outcome }}
+          GITLEAKS: ${{ steps.gitleaks.outcome }}
+          OSV: ${{ steps.osv_gate.outcome }}
         run: |
-          rc=0
-          python3 "$ENGINE" scan . --no-external --fail-on certain-high --out "$RUNNER_TEMP/audit" || rc=$?
-          if [ -f "$RUNNER_TEMP/audit/audit.md" ]; then cat "$RUNNER_TEMP/audit/audit.md" >> "$GITHUB_STEP_SUMMARY"; fi
-          exit $rc
+          {
+            echo "### security-baseline"
+            echo "| scanner | outcome |"
+            echo "|---|---|"
+            echo "| code (semgrep) | ${SEMGREP:-?} - ${WHY:-?} |"
+            echo "| audit (secure-build engine) | ${AUDIT:-?} |"
+            echo "| secrets (gitleaks) | ${GITLEAKS:-?} |"
+            echo "| dependencies (osv-scanner) | ${OSV:-?} |"
+          } >> "$GITHUB_STEP_SUMMARY"
