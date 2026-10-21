@@ -160,7 +160,10 @@ jobs:
         id: osv
         if: ${{ !cancelled() }}
         # exit 1 = vulnerabilities found (expected, the gate below decides); any other
-        # non-zero exit is a tool error and the gate fails because the results file is missing.
+        # non-zero exit is a tool error. A missing results file is NOT the only sign of that:
+        # on a network failure osv-scanner 2.5.1 exits 127 and still writes a results file that is
+        # byte-identical to a clean scan's (`results: []`), measured 21-10-2026. The gate therefore
+        # also reads this step's outcome (see OSV_OUTCOME below).
         # Time-limited exceptions live in osv-scanner.toml at the repo root, when the repo has one:
         # the generator then adds --config=osv-scanner.toml below.
         continue-on-error: true
@@ -174,10 +177,16 @@ jobs:
       - name: dependencies (osv-scanner) - fail on CRITICAL or HIGH
         id: osv_gate
         if: ${{ !cancelled() }}
+        env:
+          # The scanner's own result, before continue-on-error: "success" only on exit 0.
+          # Exit 1 always comes with at least one vulnerability in the file (advisories ignored in
+          # osv-scanner.toml are dropped from both the file and the exit code - measured), so
+          # "failure" with zero vulnerabilities can only be a tool or network error.
+          OSV_OUTCOME: ${{ steps.osv.outcome }}
         run: |
           test -f osv-results.json || { echo "::error::osv-scanner produced no results file - tool error, not a clean run"; exit 2; }
           python3 - <<'PY'
-          import json, sys, collections
+          import json, os, sys, collections
           d = json.load(open("osv-results.json"))
           rows = []
           for res in d.get("results", []):
@@ -186,6 +195,11 @@ jobs:
                   for v in p.get("vulnerabilities", []):
                       sev = (v.get("database_specific") or {}).get("severity", "UNKNOWN")
                       rows.append((sev, p["package"]["name"], p["package"]["version"], v["id"], src))
+          outcome = os.environ.get("OSV_OUTCOME", "")
+          if outcome != "success" and not rows:
+              print(f"::error::osv-scanner did not finish (step outcome: {outcome or 'unknown'}) and its results "
+                    "file lists no vulnerabilities - a tool or network error, not a clean run. Read the osv step log.")
+              sys.exit(2)
           counts = collections.Counter(r[0] for r in rows)
           print("vulnerabilities by severity:", dict(counts) or "none")
           blocking = [r for r in rows if r[0] in ("CRITICAL", "HIGH")]
