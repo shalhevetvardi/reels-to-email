@@ -215,6 +215,17 @@ Things to know:
 - **The bot answers Telegram right away** and processes the link afterwards, so a slow link does not make Telegram time out. If the instance is stopped before it has handled a message it had already accepted, that message is not sent again; the graceful-stop notice (see Redeploys) covers a link that is being processed.
 - Do not set a health-check path on the Render service: the bot answers only `POST` on its secret path.
 
+### Where it runs: a Render free web service
+
+Since 22-10-2026 the bot runs on Render as a free **web service** named `reels-to-email`, in webhook mode (it ran on Railway in polling mode before; Railway is no longer used). The service builds from the `Dockerfile` in this repository, which starts `python src/main.py`.
+
+To set it up (or recreate it):
+
+1. In Render create a **Web Service** from this repository, runtime **Docker**, instance type **Free**.
+2. Under **Environment** add every variable from `.env.example` that you use, including `TELEGRAM_BOT_TOKEN`, `ALLOWED_CHAT_IDS`, the four API keys, `RESEND_FROM_EMAIL`, `TARGET_EMAIL` and `PROFILE_CONTENT` (the contents of your `config/profile.md`; the file itself is git-ignored).
+3. Add `TELEGRAM_WEBHOOK_SECRET` (see the table above). That is what turns webhook mode on. Render sets `PORT` and `RENDER_EXTERNAL_URL` by itself.
+4. Deploy. On start the bot registers its webhook with Telegram.
+
 ### Step 8 — Send a Reel
 
 From the Instagram app on your phone:
@@ -242,20 +253,20 @@ The bot checks by itself, once a day, that the four API keys it depends on (Open
 
 ## 🔁 Redeploys
 
-A redeploy (for example a merge to `main` on Railway) stops the old container while a link may still be in the middle of processing. The bot handles it like this:
+A redeploy (for example a merge to `main` on Render) stops the old instance while a link may still be in the middle of processing. The bot handles it like this:
 
-- The old container gets ten minutes to finish (`drainingSeconds` in `railway.json`), instead of being cut at once. The link that is being processed, and any link already waiting behind it, are finished and emailed as usual.
+- On the stop signal (SIGTERM) the bot does not quit at once: it finishes the link that is being processed and any link already waiting behind it, and emails them as usual. How long the host waits before it forcibly kills the process is the host's own setting (Render's shutdown delay); nothing in this repository sets it, so a very slow link can still be cut off.
 - The sender gets one Telegram message that quotes their link and says the bot is updating and is still processing it.
 - A link that is picked up after that point is acknowledged with the same note.
 - If no email arrives within a few minutes of that message, send the link again.
 
-Links that were never received by the old container (sent during the switch) are picked up by the new one.
+Links that were never received by the old instance (sent during the switch) are picked up by the new one.
 
 ---
 
 ## 🔇 Reels this server cannot get
 
-Some hosting networks get certain reels muted. Measured on 18-10-2026: for reels that use a song from Instagram's music library, Instagram answers requests from Railway's network (every Railway region tested) with the audio muted - *"This music can't be played due to recent licensing changes with the rights holder"* - while GitHub's runners, AWS and a home connection get the same reels with sound. Reels with their own sound are not affected. Later the same day the same server got Instagram's login wall instead of a reel (*"You have exceeded the rate-limit for accessing posts anonymously"*).
+Some hosting networks get certain reels muted. History, measured on 18-10-2026 while the bot still ran on Railway (it has run on Render since 22-10-2026): for reels that use a song from Instagram's music library, Instagram answered requests from Railway's network (every Railway region tested) with the audio muted - *"This music can't be played due to recent licensing changes with the rights holder"* - while GitHub's runners, AWS and a home connection got the same reels with sound. Reels with their own sound were not affected. Later the same day the same server got Instagram's login wall instead of a reel (*"You have exceeded the rate-limit for accessing posts anonymously"*).
 
 When the download has no audio track, or Instagram answers with its login wall, the bot hands the link to a GitHub Actions workflow (`.github/workflows/process-reel-fallback.yml`). The workflow runs the whole pipeline on a GitHub runner (`src/fallback_job.py`), sends the same status messages to the sender in Telegram, and emails the result. The sender is told the link was passed on. If the fallback is off or GitHub refuses the request, the bot answers as before: that the reel came down without sound, or that something went wrong.
 
@@ -318,9 +329,9 @@ At 30 Reels per month: **~$0.40/month**.
 | `Profile file not found` | `config/profile.md` not created | `cp config/profile.md.example config/profile.md` |
 | Email cut off | Explanation longer than `max_tokens` | Raise `max_tokens` in `src/explain.py` |
 | Bot doesn't respond | Token wrong, or `/start` not pressed | Re-check `.env`, click the bot link, press Start |
-| Alert email / Telegram message about a rejected key | The provider no longer accepts that API key (revoked or expired) | Create a new key at the provider, replace it in the host's variables (`.env` / Railway), then redeploy |
-| The bot said it is updating and no email arrived | The update stopped the old container before it could finish that link | Send the link again |
-| Bot silent to everyone (incl. you) | `ALLOWED_CHAT_IDS` not set (fail-closed) | Add your Telegram chat id to `ALLOWED_CHAT_IDS` in `.env` / Railway, then redeploy |
+| Alert email / Telegram message about a rejected key | The provider no longer accepts that API key (revoked or expired) | Create a new key at the provider, replace it in the host's variables (`.env` locally, the Render service's Environment page in production), then redeploy |
+| The bot said it is updating and no email arrived | The update stopped the old instance before it could finish that link | Send the link again |
+| Bot silent to everyone (incl. you) | `ALLOWED_CHAT_IDS` not set (fail-closed) | Add your Telegram chat id to `ALLOWED_CHAT_IDS` in `.env` (locally) or the Render service's Environment page, then redeploy |
 
 ---
 

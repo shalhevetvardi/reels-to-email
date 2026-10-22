@@ -1,4 +1,4 @@
-# Dockerfile — how a container platform (Render, Railway, ...) builds and runs the bot.
+# Dockerfile — how a container platform (Render, for the bot's free web service) builds and runs the bot.
 
 FROM python:3.12-slim
 

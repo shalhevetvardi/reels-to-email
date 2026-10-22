@@ -1,7 +1,8 @@
 """Hand a reel to the GitHub Actions fallback when this server cannot get it.
 
-Measured 18 Oct 2026: for reels that use a song from Instagram's music library,
-Instagram answers requests from Railway's network (every Railway region tested) with
+Measured 18 Oct 2026, while the bot ran on Railway (it has run on Render since 22 Oct 2026):
+for reels that use a song from Instagram's music library, Instagram answers requests
+from Railway's network (every Railway region tested) with
 the audio muted - "This music can't be played due to recent licensing changes with
 the rights holder." The same reels come with sound to GitHub's runners, AWS and a home
 connection. Later that day the same server got Instagram's login wall ("rate-limit for

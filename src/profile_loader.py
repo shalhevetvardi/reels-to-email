@@ -2,7 +2,7 @@
 Profile loader — reads the user's personal configuration.
 
 Load order:
-  1. Environment variable PROFILE_CONTENT (used on cloud platforms like Railway)
+  1. Environment variable PROFILE_CONTENT (used on cloud platforms like Render)
   2. Local file config/profile.md (used during local development)
   3. Error with clear instructions
 
@@ -41,7 +41,7 @@ def load_profile() -> str:
         "  LOCAL DEVELOPMENT:\n"
         "    1. cp config/profile.md.example config/profile.md\n"
         "    2. Edit config/profile.md to describe yourself.\n\n"
-        "  CLOUD DEPLOYMENT (Railway / Render / Fly / etc.):\n"
+        "  CLOUD DEPLOYMENT (Render / Fly / etc.):\n"
         "    1. Open config/profile.md.example as a starting point.\n"
         "    2. In your platform's dashboard, add an environment variable:\n"
         "         Name:  PROFILE_CONTENT\n"

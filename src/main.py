@@ -72,8 +72,8 @@ rate_limiter = RateLimiter(max_per_window=_RATE_LIMIT_MAX_PER_HOUR, window_secon
 
 
 # --- Graceful stop ---
-# A redeploy sends SIGTERM and then, after railway.json's drainingSeconds, SIGKILL. In that
-# window python-telegram-bot finishes the update being handled and the ones queued behind it;
+# A redeploy sends SIGTERM and then, after the host's own shutdown delay, SIGKILL (nothing in
+# this repo sets that delay). In that window python-telegram-bot finishes the update being handled and the ones queued behind it;
 # what it does not do is tell the sender, so we track what is in flight and say so.
 
 
