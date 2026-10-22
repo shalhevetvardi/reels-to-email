@@ -6,6 +6,8 @@ Nothing here reaches Telegram, Instagram, a model API or an email provider.
 
 Environment: STOP_DRIVER_LOG = path of the JSON-lines file that records every API call.
 STOP_DRIVER_SLOW_START=1 makes the start-up take two seconds, to signal the bot while it starts.
+STOP_DRIVER_WEBHOOK_PORT=<port> runs the bot in webhook mode on that local port instead of polling
+(with STOP_DRIVER_WEBHOOK_SECRET); the test then posts the updates itself, over the loopback only.
 """
 import asyncio
 import json
@@ -96,6 +98,9 @@ class FakeRequest(BaseRequest):
                 "chat": {"id": params["chat_id"], "type": "private"},
                 "text": params.get("text", ""),
             }
+        elif name == "setWebhook":
+            # Test-only secret and a made-up address: recorded so the test can check both.
+            _record(method=name, url=params.get("url"), secret_token=params.get("secret_token"))
         else:
             _record(method=name)
             if name == "deleteWebhook" and os.environ.get("STOP_DRIVER_SLOW_START"):
@@ -116,5 +121,18 @@ async def fake_pipeline(url, **kwargs):
 main.run_pipeline = fake_pipeline
 
 application = main._build_application(request=FakeRequest(), get_updates_request=FakeRequest())
-main._run(application)
+webhook_port = os.environ.get("STOP_DRIVER_WEBHOOK_PORT")
+if webhook_port:
+    import dataclasses  # noqa: E402
+
+    from webhook_mode import load_webhook_config  # noqa: E402
+
+    config = load_webhook_config({
+        "TELEGRAM_WEBHOOK_SECRET": os.environ["STOP_DRIVER_WEBHOOK_SECRET"],
+        "RENDER_EXTERNAL_URL": "https://bot.example.test",
+        "PORT": webhook_port,
+    })
+    main._run(application, dataclasses.replace(config, listen="127.0.0.1"))
+else:
+    main._run(application)
 print("DRIVER EXITED CLEANLY", flush=True)

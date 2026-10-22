@@ -59,6 +59,7 @@ reels-to-email/
 │   └── profile.md          # YOUR personal profile (git-ignored)
 ├── src/
 │   ├── main.py             # Telegram bot entry point
+│   ├── webhook_mode.py     # Webhook settings (fail-closed) and the repeated-update guard
 │   ├── pipeline.py         # Orchestrates the stages (video flow + carousel flow)
 │   ├── profile_loader.py   # Reads config/profile.md
 │   ├── download.py         # Downloads audio with yt-dlp + ffmpeg
@@ -186,6 +187,33 @@ python src/main.py
 You should see: `Bot starting — polling for messages.`
 
 The terminal stays "busy" — that's normal. To stop: `Ctrl+C`.
+
+---
+
+## 📡 Two ways to receive messages: polling or webhook
+
+| | Polling (default) | Webhook |
+|---|---|---|
+| Chosen when | `TELEGRAM_WEBHOOK_SECRET` is **not** set | `TELEGRAM_WEBHOOK_SECRET` is set |
+| How it works | The bot keeps asking Telegram for new messages (outbound only, no port) | Telegram sends each message to a public https address; the bot listens on `$PORT` |
+| Good for | Local development, any always-on process | A Render **free** web service, which sleeps after 15 minutes without a request and is woken by Telegram's request |
+
+Webhook variables:
+
+| Variable | Needed | What it is |
+|---|---|---|
+| `TELEGRAM_WEBHOOK_SECRET` | yes, to turn webhook mode on | A random string of 32-256 characters, only `A-Z a-z 0-9 _ -` (make one with `openssl rand -hex 32`). Telegram sends it in a header on every request and the bot refuses any request without it. The URL path Telegram posts to is derived from it, so it is not guessable either. |
+| `TELEGRAM_WEBHOOK_BASE_URL` | no | The public `https://` address of the bot. If unset, `RENDER_EXTERNAL_URL` is used (Render sets it on web services). |
+| `PORT` | yes in webhook mode | Port to listen on. Render sets it. |
+
+The bot **refuses to start** (error message, non-zero exit) in webhook mode if the secret is missing, shorter than 32 characters or has other characters, if no `https://` address is available, or if `PORT` is not valid. It never runs an unauthenticated webhook. Setting `TELEGRAM_WEBHOOK_BASE_URL` without the secret is also an error, not a silent fall back to polling.
+
+Things to know:
+
+- **Telegram has one delivery mode per bot.** Starting in webhook mode registers the webhook (`setWebhook`) for that bot token, and starting in polling mode removes it. Two copies with the same token (for example local polling next to the Render service) take the bot from each other. Use a second bot from `@BotFather` for local development.
+- **A message that arrives while the instance sleeps** is delivered when it wakes; a cold start can take up to a minute, so Telegram may send the same update again. The bot handles each update (and each chat + message) once per process and ignores the repeat. This memory is lost when the process restarts, so a repeat that arrives after a restart can run once more.
+- **The bot answers Telegram right away** and processes the link afterwards, so a slow link does not make Telegram time out. If the instance is stopped before it has handled a message it had already accepted, that message is not sent again; the graceful-stop notice (see Redeploys) covers a link that is being processed.
+- Do not set a health-check path on the Render service: the bot answers only `POST` on its secret path.
 
 ### Step 8 — Send a Reel
 
