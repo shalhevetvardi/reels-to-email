@@ -1,10 +1,10 @@
-# The no-audio fallback (src/fallback.py explains why). The bot on Railway starts this
+# The no-audio fallback (src/fallback.py explains why). The bot on Render starts this
 # when Instagram hands its server a reel without sound; a GitHub runner gets the sound,
 # runs the whole pipeline (src/fallback_job.py) and tells the sender in Telegram.
 # Only workflow_dispatch starts it, and that needs write access to the repository.
 #
 # Secrets it needs (Settings -> Secrets and variables -> Actions), the same values as
-# the bot's variables on Railway: ALLOWED_CHAT_IDS, TELEGRAM_BOT_TOKEN, OPENAI_API_KEY,
+# the bot's variables on Render: ALLOWED_CHAT_IDS, TELEGRAM_BOT_TOKEN, OPENAI_API_KEY,
 # ANTHROPIC_API_KEY, PERPLEXITY_API_KEY, RESEND_API_KEY, RESEND_FROM_EMAIL, TARGET_EMAIL,
 # PROFILE_CONTENT, INTERFACE_LANGUAGE.
 name: process-reel-fallback

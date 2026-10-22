@@ -4,7 +4,7 @@ Returns the path to the downloaded audio file.
 
 Cookies handling:
   - Locally, yt-dlp can pull cookies straight from your browser (no setup).
-  - On a server (Railway / Render / etc.) there's no browser session, so
+  - On a server (Render / etc.) there's no browser session, so
     Instagram blocks anonymous requests. We support two ways to provide cookies:
     1. Env var INSTAGRAM_COOKIES — paste the contents of a cookies.txt file
        (Netscape format). We'll write it to a temp file at startup.
@@ -43,8 +43,8 @@ class NoAudioTrackError(Exception):
 class InstagramBlockedError(Exception):
     """Instagram answered this server with its login wall instead of the reel.
 
-    Seen in production on 18 Oct 2026, from the same Railway server that had been getting
-    library-music reels muted all day: "redirected to the login page. You have exceeded the
+    Seen in production on 18 Oct 2026, from the same server (then on Railway; the bot has run on
+    Render since 22 Oct 2026) that had been getting library-music reels muted all day: "redirected to the login page. You have exceeded the
     rate-limit for accessing posts anonymously". Another network still gets the reel.
     """
 

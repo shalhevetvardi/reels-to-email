@@ -375,7 +375,7 @@ def test_when_not_draining_the_first_reply_is_the_plain_acknowledgement(monkeypa
     assert "do_quote" not in first.kwargs
 
 
-# --- 10-11: messages and deploy settings ---
+# --- 10-11: messages ---
 
 
 @pytest.mark.parametrize("language", sorted(MESSAGES))
@@ -385,14 +385,6 @@ def test_both_new_messages_name_the_link_in_every_language(language, key):
     text = t(key, language, url=URL)
     assert URL in text
     assert "{url}" not in text and "{" not in text
-
-
-def test_railway_gives_the_old_container_time_to_finish():
-    deploy = json.loads((ROOT / "railway.json").read_text(encoding="utf-8"))["deploy"]
-    assert isinstance(deploy["drainingSeconds"], (int, float))
-    assert not isinstance(deploy["drainingSeconds"], bool)
-    assert deploy["drainingSeconds"] >= 300
-    assert deploy["overlapSeconds"] == 0
 
 
 # --- the real lifecycle, offline ---

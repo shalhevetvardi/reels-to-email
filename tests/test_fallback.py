@@ -2,7 +2,7 @@
 whole pipeline and reports to the sender. No network: GitHub, Telegram and the pipeline
 are replaced by stand-ins.
 
-Measured 18 Oct 2026: Instagram mutes reels with a library song for Railway's network
+Measured 18 Oct 2026 (the bot ran on Railway then): Instagram mutes reels with a library song for Railway's network
 and serves them with sound to GitHub's runners. Tests prefixed test_fix_ fail on the
 code before the fallback; test_regression_ ones guard behaviour that already worked.
 """

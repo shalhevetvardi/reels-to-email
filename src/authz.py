@@ -59,7 +59,7 @@ def is_authorized(chat_id: int | None, allowed: FrozenSet[int]) -> bool:
 class RateLimiter:
     """In-memory sliding-window limiter, keyed by chat id.
 
-    Single replica (numReplicas=1 in railway.json), so in-process state is
+    Single instance (one free web service on Render), so in-process state is
     sufficient; a restart resets counters, which is acceptable for a backstop.
     """
 
