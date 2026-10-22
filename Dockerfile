@@ -1,4 +1,4 @@
-# Dockerfile — how Railway (or any container platform) builds and runs the bot.
+# Dockerfile — how a container platform (Render, Railway, ...) builds and runs the bot.
 
 FROM python:3.12-slim
 
@@ -24,6 +24,9 @@ RUN useradd --create-home --uid 10001 appuser \
     && chown -R appuser:appuser /app
 USER appuser
 
-# The bot runs as a long-lived process and doesn't expose a port —
-# it talks to Telegram via long-polling (outbound only).
+# One image, two ways to receive messages (src/webhook_mode.py):
+#  - TELEGRAM_WEBHOOK_SECRET set: webhook mode. The bot listens on $PORT (Render sets it) and
+#    Telegram's request is what wakes a sleeping free web service. Needs a public https address
+#    (RENDER_EXTERNAL_URL, or TELEGRAM_WEBHOOK_BASE_URL).
+#  - Not set: long-polling (outbound only, no port). For a long-lived process and for local use.
 CMD ["python", "src/main.py"]

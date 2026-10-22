@@ -9,6 +9,9 @@ and even they are rate-limited. See src/authz.py.
 
 Run with:
     python src/main.py
+
+Two ways of receiving messages (see webhook_mode.py): long-polling by default, and a webhook
+when TELEGRAM_WEBHOOK_SECRET is set, which is how it runs on a Render free web service.
 """
 
 import asyncio
@@ -22,9 +25,11 @@ from dotenv import load_dotenv
 from telegram import LinkPreviewOptions, ReplyParameters, Update
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    TypeHandler,
     filters,
 )
 
@@ -38,6 +43,7 @@ from instagram_post import extract_user_note
 import alert_intake
 from email_sender import send_alert_email
 from health import interval_hours, report_failure, run_health_check
+from webhook_mode import SeenUpdates, WebhookConfig, WebhookConfigError, load_webhook_config
 
 # Load secrets from .env at the project root
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -87,6 +93,26 @@ _intake_tasks: set[asyncio.Task] = set()
 
 _NOTICE_TIMEOUT_SECONDS = 10
 _STOP_SIGNALS = (signal.SIGTERM, signal.SIGINT, signal.SIGABRT)
+
+
+# Each update is handled once per process lifetime (see SeenUpdates for why memory is enough).
+_seen_updates = SeenUpdates()
+
+
+async def _drop_repeated_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Stop an update Telegram delivered again, before any handler (or the paid pipeline) sees it.
+
+    Runs in the first handler group, so ApplicationHandlerStop keeps the later groups from running.
+    """
+    message = update.message
+    first_time = _seen_updates.first_time(
+        update.update_id,
+        chat_id=message.chat_id if message else None,
+        message_id=message.message_id if message else None,
+    )
+    if not first_time:
+        logger.info("Ignored an update Telegram delivered again.")
+        raise ApplicationHandlerStop
 
 
 def _authorized(update: Update) -> bool:
@@ -340,19 +366,41 @@ def _build_application(request=None, get_updates_request=None) -> Application:
     if get_updates_request is not None:
         builder = builder.get_updates_request(get_updates_request)
     app = builder.build()
+    app.add_handler(TypeHandler(Update, _drop_repeated_update), group=-1)
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return app
 
 
-def _run(application: Application) -> None:
-    # The library's own stop handlers are left on: they cover the first moments of start-up,
-    # until _post_init replaces them with ours (which tell the sender first). With none at all,
-    # a SIGTERM in that window would be ignored - the process is PID 1 in the container.
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+def _run(application: Application, webhook: WebhookConfig | None = None) -> None:
+    # The library's own stop handlers are left on in both modes: they cover the first moments of
+    # start-up, until _post_init replaces them with ours (which tell the sender first). With none
+    # at all, a SIGTERM in that window would be ignored - the process is PID 1 in the container.
+    if webhook is None:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        return
+    # PTB answers Telegram with 200 as soon as the update is in its queue and handles it after
+    # that, one at a time; a link that takes minutes does not make Telegram time out. The secret
+    # makes the server refuse any request that does not carry it in the header.
+    application.run_webhook(
+        listen=webhook.listen,
+        port=webhook.port,
+        url_path=webhook.url_path,
+        webhook_url=webhook.webhook_url,
+        secret_token=webhook.secret_token,
+        allowed_updates=Update.ALL_TYPES,
+        # A few tries: the first request after a cold start can find the network not ready.
+        bootstrap_retries=5,
+    )
 
 
 def main() -> None:
+    # Decided first, so a half-finished webhook setup stops the process before anything else starts.
+    try:
+        webhook = load_webhook_config(os.environ)
+    except WebhookConfigError as e:
+        raise SystemExit(f"ERROR: {e}")
+
     if not TELEGRAM_BOT_TOKEN or TELEGRAM_BOT_TOKEN == "PASTE_HERE":
         raise RuntimeError(
             "TELEGRAM_BOT_TOKEN is missing or not filled in .env. "
@@ -372,8 +420,12 @@ def main() -> None:
 
     app = _build_application()
 
-    logger.info("Bot starting — polling for messages. Press Ctrl+C to stop.")
-    _run(app)
+    if webhook is None:
+        logger.info("Bot starting — polling for messages. Press Ctrl+C to stop.")
+    else:
+        # Not the address or the path: both are part of what keeps the webhook private.
+        logger.info("Bot starting — webhook mode, listening on port %d.", webhook.port)
+    _run(app, webhook)
 
 
 if __name__ == "__main__":

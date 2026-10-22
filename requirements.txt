@@ -1,7 +1,8 @@
 # reels-to-email — Python dependencies
 
-# Telegram bot framework
-python-telegram-bot>=21.0
+# Telegram bot framework. The [webhooks] extra (tornado) is what run_webhook needs; polling
+# alone would not. Webhook mode is how the bot runs on a Render free web service.
+python-telegram-bot[webhooks]>=21.0
 
 # Environment variables
 python-dotenv>=1.0.0
